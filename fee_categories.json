@@ -1,0 +1,32 @@
+{
+  "categories": [
+    {
+      "name": "Namasankeerthanam",
+      "fee": 502.0
+    },
+    {
+      "name": "Shloka Class",
+      "fee": 503.0
+    },
+    {
+      "name": "Rishabhaa Class",
+      "fee": 750.0
+    },
+    {
+      "name": "New Class",
+      "fee": 550.0
+    },
+    {
+      "name": "New Class 2",
+      "fee": 560.0
+    },
+    {
+      "name": "New Class 3",
+      "fee": 570.0
+    },
+    {
+      "name": "Donations",
+      "fee": null
+    }
+  ]
+}
