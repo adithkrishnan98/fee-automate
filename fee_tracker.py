@@ -13,9 +13,10 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
     QLabel, QGroupBox, QHeaderView, QMessageBox, QLineEdit, QComboBox,
-    QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QGridLayout
+    QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QGridLayout,
+    QCheckBox
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QColor
 
 # Import student name mappings
@@ -94,6 +95,18 @@ class FeeTrackerApp(QMainWindow):
             category_key = self.get_category_key(cat['name'], cat['fee'])
             self.categorized_data[category_key] = []
         
+        # Search optimization
+        self.search_timer = QTimer()
+        self.search_timer.setSingleShot(True)
+        self.search_timer.timeout.connect(self.perform_search)
+        self.search_delay = 150  # milliseconds - faster response
+        self.color_cache = {}  # Cache for color mappings
+        
+        # Selection state tracking
+        self.selected_transactions = set()  # Track selected transaction IDs
+        self._manual_selection_panel_open = False  # Track manual panel state
+        self._updating_display = False  # Prevent concurrent updates
+        
         self.init_ui()
     
     def load_categories(self):
@@ -126,6 +139,10 @@ class FeeTrackerApp(QMainWindow):
             return f"{name} (₹{fee:.0f})"
         else:
             return name
+    
+    def get_transaction_id(self, transaction):
+        """Generate a unique ID for a transaction"""
+        return f"{transaction['date']}_{transaction['name']}_{transaction['amount']}_{transaction['reference']}"
         
     def init_ui(self):
         """Initialize the user interface"""
@@ -258,7 +275,7 @@ class FeeTrackerApp(QMainWindow):
                 border: 2px solid #1976D2;
             }
         """)
-        self.search_input.textChanged.connect(self.perform_search)
+        self.search_input.textChanged.connect(self.on_search_text_changed)
         search_layout.addWidget(self.search_input, 1)
         
         # Clear search button
@@ -287,23 +304,121 @@ class FeeTrackerApp(QMainWindow):
         self.search_group.setVisible(False)  # Hidden by default
         main_layout.addWidget(self.search_group)
         
+        # Selection toggle button
+        self.selection_toggle_btn = QPushButton("✅ Show Selection Tools")
+        self.selection_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+        """)
+        self.selection_toggle_btn.clicked.connect(self.toggle_selection_panel)
+        main_layout.addWidget(self.selection_toggle_btn)
+        
+        # Selection Controls Panel
+        self.selection_group = QGroupBox("")
+        selection_layout = QHBoxLayout()
+        
+        # Selection controls (Select All button hidden for now)
+        
+        self.clear_selection_btn = QPushButton("☐ Clear Selection")
+        self.clear_selection_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: white;
+                padding: 8px 15px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #616161;
+            }
+        """)
+        self.clear_selection_btn.clicked.connect(self.clear_selection)
+        selection_layout.addWidget(self.clear_selection_btn)
+        
+        # Separator
+        selection_layout.addWidget(QLabel("|"))
+        
+        # Selection info
+        self.selection_label = QLabel("Selected: 0 transactions")
+        self.selection_label.setStyleSheet("font-weight: bold; color: #1976D2; padding: 8px;")
+        selection_layout.addWidget(self.selection_label)
+        
+        # Spacer
+        selection_layout.addStretch()
+        
+        # Action buttons
+        self.edit_selected_btn = QPushButton("✏️ Edit Selected")
+        self.edit_selected_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                padding: 8px 15px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+            QPushButton:disabled {
+                background-color: #BDBDBD;
+            }
+        """)
+        self.edit_selected_btn.setEnabled(False)
+        self.edit_selected_btn.clicked.connect(self.edit_selected_transactions)
+        selection_layout.addWidget(self.edit_selected_btn)
+        
+        self.delete_selected_btn = QPushButton("🗑️ Delete Selected")
+        self.delete_selected_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                padding: 8px 15px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #d32f2f;
+            }
+            QPushButton:disabled {
+                background-color: #BDBDBD;
+            }
+        """)
+        self.delete_selected_btn.setEnabled(False)
+        self.delete_selected_btn.clicked.connect(self.delete_selected_transactions)
+        selection_layout.addWidget(self.delete_selected_btn)
+        
+        self.selection_group.setLayout(selection_layout)
+        self.selection_group.setVisible(False)  # Hidden by default
+        main_layout.addWidget(self.selection_group)
+        
         # Table for displaying categorized data
         self.table = QTableWidget()
-        self.table.setColumnCount(8)
+        self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
-            "Date", "Name", "Amount (₹)", "Category", "Description", "Reference", "Edit", "Delete"
+            "☐", "Date", "Name", "Amount (₹)", "Category", "Description", "Reference"
         ])
         
         # Set table properties
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.Stretch)
-        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.Fixed)             # Checkbox column - Fixed width
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Date
+        header.setSectionResizeMode(2, QHeaderView.Stretch)           # Name
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Amount
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Category
+        header.setSectionResizeMode(5, QHeaderView.Stretch)           # Description
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Reference
+        
+        # Set fixed width for checkbox column (50 pixels should be enough)
+        self.table.setColumnWidth(0, 50)
         
         self.table.setAlternatingRowColors(True)
         self.table.setStyleSheet("""
@@ -533,98 +648,90 @@ class FeeTrackerApp(QMainWindow):
     
     def update_display(self):
         """Update the table and summary with categorized data"""
-        # Clear table
-        self.table.setRowCount(0)
+        # Prevent concurrent updates
+        if self._updating_display:
+            return
         
-        # Generate dynamic color mapping for all categories
-        color_palette = [
-            (QColor(200, 230, 201), QColor(27, 94, 32)),   # Light green / Dark green
-            (QColor(187, 222, 251), QColor(13, 71, 161)),  # Light blue / Dark blue
-            (QColor(255, 224, 178), QColor(230, 81, 0)),   # Light orange / Dark orange
-            (QColor(248, 187, 208), QColor(136, 14, 79)),  # Light pink / Dark pink
-            (QColor(225, 190, 231), QColor(74, 20, 140)),  # Light purple / Dark purple
-            (QColor(255, 245, 157), QColor(245, 127, 23)), # Light yellow / Dark yellow
-        ]
+        self._updating_display = True
         
-        colors = {}
-        text_colors = {}
-        for idx, category_key in enumerate(self.categorized_data.keys()):
-            bg_color, fg_color = color_palette[idx % len(color_palette)]
-            colors[category_key] = bg_color
-            text_colors[category_key] = fg_color
+        try:
+            # Clear color cache to regenerate for any category changes
+            self.color_cache.clear()
+            
+            # Clear selection since row indices will change
+            self.selected_transactions.clear()
+            self._manual_selection_panel_open = False
+            
+            # Clear table
+            self.table.setRowCount(0)
+            
+            # Generate dynamic color mapping for all categories
+            color_palette = [
+                (QColor(200, 230, 201), QColor(27, 94, 32)),   # Light green / Dark green
+                (QColor(187, 222, 251), QColor(13, 71, 161)),  # Light blue / Dark blue
+                (QColor(255, 224, 178), QColor(230, 81, 0)),   # Light orange / Dark orange
+                (QColor(248, 187, 208), QColor(136, 14, 79)),  # Light pink / Dark pink
+                (QColor(225, 190, 231), QColor(74, 20, 140)),  # Light purple / Dark purple
+                (QColor(255, 245, 157), QColor(245, 127, 23)), # Light yellow / Dark yellow
+            ]
+            
+            colors = {}
+            text_colors = {}
+            for idx, category_key in enumerate(self.categorized_data.keys()):
+                bg_color, fg_color = color_palette[idx % len(color_palette)]
+                colors[category_key] = bg_color
+                text_colors[category_key] = fg_color
+            
+            # Populate table by category (iterate dynamically)
+            row = 0
+            for category_key in self.categorized_data.keys():
+                for transaction in self.categorized_data[category_key]:
+                    self.table.insertRow(row)
+                    
+                    # Add checkbox for selection
+                    checkbox_widget = QWidget()
+                    checkbox_layout = QHBoxLayout(checkbox_widget)
+                    checkbox = QCheckBox()
+                    transaction_id = self.get_transaction_id(transaction)
+                    checkbox.setChecked(transaction_id in self.selected_transactions)
+                    checkbox.toggled.connect(lambda checked, tid=transaction_id: self.on_checkbox_toggled(tid, checked))
+                    checkbox_layout.addWidget(checkbox)
+                    checkbox_layout.setAlignment(Qt.AlignCenter)
+                    checkbox_layout.setContentsMargins(0, 0, 0, 0)
+                    self.table.setCellWidget(row, 0, checkbox_widget)
+                
+                    # Add data to cells (shifted by 1 column)
+                    self.table.setItem(row, 1, QTableWidgetItem(transaction['date']))
+                    self.table.setItem(row, 2, QTableWidgetItem(transaction['name']))
+                    
+                    amount_item = QTableWidgetItem(f"₹{transaction['amount']:.2f}")
+                    amount_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    self.table.setItem(row, 3, amount_item)
+                    
+                    # Display category without amount
+                    display_category = self.get_display_category(transaction['category'])
+                    category_item = QTableWidgetItem(display_category)
+                    category_item.setBackground(colors[transaction['category']])
+                    category_item.setForeground(text_colors[transaction['category']])
+                    category_item.setTextAlignment(Qt.AlignCenter)
+                    category_item.setFont(QFont("", -1, QFont.Bold))
+                    self.table.setItem(row, 4, category_item)
+                    
+                    desc_item = QTableWidgetItem(transaction['description'][:50] + "..." 
+                                                if len(transaction['description']) > 50 
+                                                else transaction['description'])
+                    self.table.setItem(row, 5, desc_item)
+                    
+                    self.table.setItem(row, 6, QTableWidgetItem(transaction['reference']))
+                    
+                    row += 1
         
-        # Populate table by category (iterate dynamically)
-        row = 0
-        for category_key in self.categorized_data.keys():
-            for transaction in self.categorized_data[category_key]:
-                self.table.insertRow(row)
-                
-                # Add data to cells
-                self.table.setItem(row, 0, QTableWidgetItem(transaction['date']))
-                self.table.setItem(row, 1, QTableWidgetItem(transaction['name']))
-                
-                amount_item = QTableWidgetItem(f"₹{transaction['amount']:.2f}")
-                amount_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.table.setItem(row, 2, amount_item)
-                
-                # Display category without amount
-                display_category = self.get_display_category(transaction['category'])
-                category_item = QTableWidgetItem(display_category)
-                category_item.setBackground(colors[transaction['category']])
-                category_item.setForeground(text_colors[transaction['category']])
-                category_item.setTextAlignment(Qt.AlignCenter)
-                category_item.setFont(QFont("", -1, QFont.Bold))
-                self.table.setItem(row, 3, category_item)
-                
-                desc_item = QTableWidgetItem(transaction['description'][:50] + "..." 
-                                            if len(transaction['description']) > 50 
-                                            else transaction['description'])
-                self.table.setItem(row, 4, desc_item)
-                
-                self.table.setItem(row, 5, QTableWidgetItem(transaction['reference']))
-                
-                # Add Edit button
-                edit_btn = QPushButton("✏️")
-                edit_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: #FF9800;
-                        color: white;
-                        padding: 5px 8px;
-                        border-radius: 3px;
-                        font-weight: bold;
-                        font-size: 14px;
-                    }
-                    QPushButton:hover {
-                        background-color: #F57C00;
-                    }
-                """)
-                edit_btn.setToolTip("Edit transaction")
-                edit_btn.clicked.connect(lambda checked, t=transaction: self.edit_transaction(t))
-                self.table.setCellWidget(row, 6, edit_btn)
-                
-                # Add Delete button
-                delete_btn = QPushButton("🗑️")
-                delete_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: #f44336;
-                        color: white;
-                        padding: 5px 8px;
-                        border-radius: 3px;
-                        font-weight: bold;
-                        font-size: 14px;
-                    }
-                    QPushButton:hover {
-                        background-color: #da190b;
-                    }
-                """)
-                delete_btn.setToolTip("Delete transaction")
-                delete_btn.clicked.connect(lambda checked, t=transaction: self.delete_transaction(t))
-                self.table.setCellWidget(row, 7, delete_btn)
-                
-                row += 1
-        
-        # Update summary
-        self.update_summary()
+            # Update summary and selection UI
+            self.update_summary()
+            self.update_selection_ui()
+            
+        finally:
+            self._updating_display = False
     
     def update_summary(self):
         """Update summary statistics dynamically"""
@@ -659,8 +766,13 @@ class FeeTrackerApp(QMainWindow):
             "padding: 10px; background-color: #fff9c4; border-radius: 5px; border: 2px solid #fbc02d; color: #f57f17;"
         )
     
+    def on_search_text_changed(self):
+        """Handle search text changes with debouncing"""
+        self.search_timer.stop()  # Stop any existing timer
+        self.search_timer.start(self.search_delay)  # Start new timer
+    
     def perform_search(self):
-        """Perform search based on selected field and search term"""
+        """Optimized search with caching and efficient filtering"""
         search_term = self.search_input.text().strip().lower()
         search_field = self.search_field_combo.currentText()
         
@@ -670,10 +782,23 @@ class FeeTrackerApp(QMainWindow):
             self.search_results_label.setText("")
             return
         
-        # Clear table
-        self.table.setRowCount(0)
+        # Cache color mapping to avoid regeneration
+        if not self.color_cache:
+            self._generate_color_cache()
         
-        # Generate dynamic color mapping for all categories (same as update_display)
+        # Fast filtering using list comprehension
+        filtered_transactions = self._filter_transactions_fast(search_term, search_field)
+        
+        # Efficient table update
+        self._update_table_efficiently(filtered_transactions)
+        
+        # Update search results label
+        total = len(self.transactions)
+        found = len(filtered_transactions)
+        self.search_results_label.setText(f"Found {found} of {total} transactions")
+    
+    def _generate_color_cache(self):
+        """Generate and cache color mappings once"""
         color_palette = [
             (QColor(200, 230, 201), QColor(27, 94, 32)),   # Light green / Dark green
             (QColor(187, 222, 251), QColor(13, 71, 161)),  # Light blue / Dark blue
@@ -683,119 +808,322 @@ class FeeTrackerApp(QMainWindow):
             (QColor(255, 245, 157), QColor(245, 127, 23)), # Light yellow / Dark yellow
         ]
         
-        colors = {}
-        text_colors = {}
+        self.color_cache = {'colors': {}, 'text_colors': {}}
         for idx, category_key in enumerate(self.categorized_data.keys()):
             bg_color, fg_color = color_palette[idx % len(color_palette)]
-            colors[category_key] = bg_color
-            text_colors[category_key] = fg_color
+            self.color_cache['colors'][category_key] = bg_color
+            self.color_cache['text_colors'][category_key] = fg_color
+    
+    def _filter_transactions_fast(self, search_term, search_field):
+        """Fast transaction filtering using optimized logic"""
+        if search_field == "All":
+            return [t for t in self.transactions if (
+                search_term in t['name'].lower() or
+                search_term in t['category'].lower() or
+                search_term in t['description'].lower() or
+                search_term in str(t['amount'])
+            )]
+        elif search_field == "Name":
+            return [t for t in self.transactions if search_term in t['name'].lower()]
+        elif search_field == "Amount":
+            return [t for t in self.transactions if search_term in str(t['amount'])]
+        elif search_field == "Category":
+            return [t for t in self.transactions if search_term in t['category'].lower()]
+        elif search_field == "Description":
+            return [t for t in self.transactions if search_term in t['description'].lower()]
+        return []
+    
+    def _update_table_efficiently(self, filtered_transactions):
+        """Efficiently update table without recreating widgets unnecessarily"""
+        # Clear table contents but preserve structure
+        self.table.setRowCount(len(filtered_transactions))
         
-        # Filter transactions based on search criteria
-        filtered_transactions = []
-        for transaction in self.transactions:
-            match = False
-            
-            if search_field == "All":
-                # Search in all fields
-                if (search_term in transaction['name'].lower() or
-                    search_term in transaction['category'].lower() or
-                    search_term in transaction['description'].lower() or
-                    search_term in str(transaction['amount'])):
-                    match = True
-            elif search_field == "Name":
-                if search_term in transaction['name'].lower():
-                    match = True
-            elif search_field == "Amount":
-                # Allow partial amount matching
-                if search_term in str(transaction['amount']):
-                    match = True
-            elif search_field == "Category":
-                if search_term in transaction['category'].lower():
-                    match = True
-            elif search_field == "Description":
-                if search_term in transaction['description'].lower():
-                    match = True
-            
-            if match:
-                filtered_transactions.append(transaction)
+        colors = self.color_cache['colors']
+        text_colors = self.color_cache['text_colors']
         
-        # Display filtered transactions
-        row = 0
-        for transaction in filtered_transactions:
-            self.table.insertRow(row)
+        # Batch table updates for better performance
+        for row, transaction in enumerate(filtered_transactions):
+            # Add checkbox for selection  
+            checkbox_widget = QWidget()
+            checkbox_layout = QHBoxLayout(checkbox_widget)
+            checkbox = QCheckBox()
+            transaction_id = self.get_transaction_id(transaction)
+            checkbox.setChecked(transaction_id in self.selected_transactions)
+            checkbox.toggled.connect(lambda checked, tid=transaction_id: self.on_checkbox_toggled(tid, checked))
+            checkbox_layout.addWidget(checkbox)
+            checkbox_layout.setAlignment(Qt.AlignCenter)
+            checkbox_layout.setContentsMargins(0, 0, 0, 0)
+            self.table.setCellWidget(row, 0, checkbox_widget)
             
-            # Add data to cells
-            self.table.setItem(row, 0, QTableWidgetItem(transaction['date']))
-            self.table.setItem(row, 1, QTableWidgetItem(transaction['name']))
+            # Set basic data (shifted by 1 column)
+            self.table.setItem(row, 1, QTableWidgetItem(transaction['date']))
+            self.table.setItem(row, 2, QTableWidgetItem(transaction['name']))
             
+            # Amount with alignment
             amount_item = QTableWidgetItem(f"₹{transaction['amount']:.2f}")
             amount_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.table.setItem(row, 2, amount_item)
+            self.table.setItem(row, 3, amount_item)
             
-            # Display category without amount
+            # Category with cached colors
             display_category = self.get_display_category(transaction['category'])
             category_item = QTableWidgetItem(display_category)
             category_item.setBackground(colors[transaction['category']])
             category_item.setForeground(text_colors[transaction['category']])
             category_item.setTextAlignment(Qt.AlignCenter)
             category_item.setFont(QFont("", -1, QFont.Bold))
-            self.table.setItem(row, 3, category_item)
+            self.table.setItem(row, 4, category_item)
             
-            desc_item = QTableWidgetItem(transaction['description'][:50] + "..." 
-                                        if len(transaction['description']) > 50 
-                                        else transaction['description'])
-            self.table.setItem(row, 4, desc_item)
+            # Description (truncated)
+            desc_text = (transaction['description'][:50] + "..." 
+                        if len(transaction['description']) > 50 
+                        else transaction['description'])
+            self.table.setItem(row, 5, QTableWidgetItem(desc_text))
             
-            self.table.setItem(row, 5, QTableWidgetItem(transaction['reference']))
-            
-            # Add Edit button
-            edit_btn = QPushButton("✏️")
-            edit_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #FF9800;
-                    color: white;
-                    padding: 5px 8px;
-                    border-radius: 3px;
-                    font-weight: bold;
-                    font-size: 14px;
-                }
-                QPushButton:hover {
-                    background-color: #F57C00;
-                }
-            """)
-            edit_btn.setToolTip("Edit transaction")
-            edit_btn.clicked.connect(lambda checked, t=transaction: self.edit_transaction(t))
-            self.table.setCellWidget(row, 6, edit_btn)
-            
-            # Add Delete button
-            delete_btn = QPushButton("🗑️")
-            delete_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #f44336;
-                    color: white;
-                    padding: 5px 8px;
-                    border-radius: 3px;
-                    font-weight: bold;
-                    font-size: 14px;
-                }
-                QPushButton:hover {
-                    background-color: #da190b;
-                }
-            """)
-            delete_btn.setToolTip("Delete transaction")
-            delete_btn.clicked.connect(lambda checked, t=transaction: self.delete_transaction(t))
-            self.table.setCellWidget(row, 7, delete_btn)
-            
-            row += 1
+            self.table.setItem(row, 6, QTableWidgetItem(transaction['reference']))
+    
+
+    def on_checkbox_toggled(self, transaction_id, checked):
+        """Handle checkbox toggle (most reliable signal)"""
+        if checked:
+            self.selected_transactions.add(transaction_id)
+        else:
+            self.selected_transactions.discard(transaction_id)
         
-        # Update search results label
-        total = len(self.transactions)
-        found = len(filtered_transactions)
-        self.search_results_label.setText(f"Found {found} of {total} transactions")
+        self.update_selection_ui()
+        
+    def on_checkbox_state_changed(self, checkbox, transaction_id):
+        """Handle checkbox state changes (simplified)"""
+        is_checked = checkbox.isChecked()
+        
+        if is_checked:
+            self.selected_transactions.add(transaction_id)
+        else:
+            self.selected_transactions.discard(transaction_id)
+        
+        self.update_selection_ui()
+    
+    def on_checkbox_changed(self, transaction_id, transaction, state):
+        """Handle checkbox state changes (legacy - keeping for compatibility)"""
+        if state == Qt.Checked:
+            self.selected_transactions.add(transaction_id)
+        else:
+            self.selected_transactions.discard(transaction_id)
+        
+        self.update_selection_ui()
+    
+    def get_visible_transactions(self):
+        """Get currently visible transactions in table order"""
+        visible = []
+        for row in range(self.table.rowCount()):
+            # Get transaction data from table
+            name = self.table.item(row, 2).text() if self.table.item(row, 2) else ""
+            amount_text = self.table.item(row, 3).text() if self.table.item(row, 3) else ""
+            
+            # Find matching transaction
+            for transaction in self.transactions:
+                if (transaction['name'] == name and 
+                    f"₹{transaction['amount']:.2f}" == amount_text):
+                    visible.append(transaction)
+                    break
+        return visible
+    
+    def select_all_transactions(self):
+        """Select all visible transactions"""
+        visible_transactions = self.get_visible_transactions()
+        
+        for transaction in visible_transactions:
+            transaction_id = self.get_transaction_id(transaction)
+            self.selected_transactions.add(transaction_id)
+        
+        # Update all checkboxes
+        for row in range(self.table.rowCount()):
+            checkbox_widget = self.table.cellWidget(row, 0)
+            if checkbox_widget:
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox:
+                    checkbox.setChecked(True)
+        
+        self.update_selection_ui()
+    
+    def clear_selection(self):
+        """Clear all selections"""
+        self.selected_transactions.clear()
+        
+        # Update all checkboxes
+        for row in range(self.table.rowCount()):
+            checkbox_widget = self.table.cellWidget(row, 0)
+            if checkbox_widget:
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox:
+                    checkbox.setChecked(False)
+        
+        # Reset manual flag when clearing
+        self._manual_selection_panel_open = False
+        self.update_selection_ui()
+    
+    def update_selection_ui(self):
+        """Update selection-related UI elements"""
+        count = len(self.selected_transactions)
+        
+        self.selection_label.setText(f"Selected: {count} transactions")
+        
+        # Enable/disable action buttons based on selection
+        has_selection = count > 0
+        self.edit_selected_btn.setEnabled(has_selection)
+        self.delete_selected_btn.setEnabled(has_selection)
+        
+        # Select all button is hidden for now - no updates needed
+        
+        # Smart accordion behavior
+        self.auto_toggle_selection_panel(has_selection)
+    
+    def toggle_selection_panel(self):
+        """Manually toggle the selection panel visibility"""
+        if self.selection_group.isVisible():
+            self.hide_selection_panel_manually()
+        else:
+            self.show_selection_panel_manually()
+    
+    def auto_toggle_selection_panel(self, has_selection):
+        """Automatically show/hide selection panel based on selections"""
+        if has_selection and not self.selection_group.isVisible():
+            # Auto-show when selections are made
+            self.selection_group.setVisible(True)
+            self.selection_toggle_btn.setText("❌ Hide Selection Tools")
+        elif not has_selection and self.selection_group.isVisible():
+            # Auto-hide when no selections, but respect manual override
+            if not self._manual_selection_panel_open:
+                self.selection_group.setVisible(False)
+                self.selection_toggle_btn.setText("✅ Show Selection Tools")
+        
+        # Reset manual flag when selections exist (user is actively using selection)
+        if has_selection:
+            self._manual_selection_panel_open = False
+    
+    def show_selection_panel_manually(self):
+        """Show selection panel and mark as manually opened"""
+        self._manual_selection_panel_open = True
+        self.selection_group.setVisible(True)
+        self.selection_toggle_btn.setText("❌ Hide Selection Tools")
+    
+    def hide_selection_panel_manually(self):
+        """Hide selection panel and clear manual flag"""
+        self._manual_selection_panel_open = False
+        self.selection_group.setVisible(False)
+        self.selection_toggle_btn.setText("✅ Show Selection Tools")
+    
+    def get_selected_transactions(self):
+        """Get the actual transaction objects for selected transactions"""
+        selected = []
+        for transaction in self.transactions:
+            transaction_id = self.get_transaction_id(transaction)
+            if transaction_id in self.selected_transactions:
+                selected.append(transaction)
+        return selected
+    
+    def edit_selected_transactions(self):
+        """Edit selected transactions"""
+        selected = self.get_selected_transactions()
+        if not selected:
+            QMessageBox.information(self, "No Selection", "Please select transactions to edit.")
+            return
+        
+        if len(selected) == 1:
+            # Edit single transaction
+            self.edit_transaction(selected[0])
+        else:
+            # Bulk edit - show dialog for category change
+            self.bulk_edit_transactions(selected)
+    
+    def bulk_edit_transactions(self, transactions):
+        """Show bulk edit dialog for multiple transactions"""
+        from PySide6.QtWidgets import QInputDialog
+        
+        # Get available categories
+        categories = list(self.categorized_data.keys())
+        
+        # Show category selection dialog
+        category, ok = QInputDialog.getItem(
+            self, 
+            "Bulk Edit", 
+            f"Change category for {len(transactions)} transactions:",
+            categories, 
+            0, 
+            False
+        )
+        
+        if ok and category:
+            # Apply category change to all selected transactions
+            for transaction in transactions:
+                old_category = transaction['category']
+                if old_category != category:
+                    # Remove from old category
+                    if transaction in self.categorized_data[old_category]:
+                        self.categorized_data[old_category].remove(transaction)
+                    # Add to new category
+                    self.categorized_data[category].append(transaction)
+                    # Update transaction
+                    transaction['category'] = category
+            
+            # Refresh display
+            self.update_display()
+            QMessageBox.information(
+                self, 
+                "Success", 
+                f"Updated {len(transactions)} transactions to {category.split(' (₹')[0]}"
+            )
+    
+    def delete_selected_transactions(self):
+        """Delete selected transactions with confirmation"""
+        selected = self.get_selected_transactions()
+        if not selected:
+            QMessageBox.information(self, "No Selection", "Please select transactions to delete.")
+            return
+        
+        # Confirmation dialog
+        reply = QMessageBox.question(
+            self, 
+            "Confirm Deletion", 
+            f"Are you sure you want to delete {len(selected)} selected transactions?\n\nThis action cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Remove from categorized data and main transactions list
+            for transaction in selected:
+                # Remove from selection tracking
+                transaction_id = self.get_transaction_id(transaction)
+                self.selected_transactions.discard(transaction_id)
+                
+                # Remove from category
+                category = transaction['category']
+                if transaction in self.categorized_data[category]:
+                    self.categorized_data[category].remove(transaction)
+                # Remove from main list
+                if transaction in self.transactions:
+                    self.transactions.remove(transaction)
+            
+            # Clear selection and refresh display
+            self.clear_selection()
+            self.update_display()
+            
+            QMessageBox.information(
+                self, 
+                "Deleted", 
+                f"Successfully deleted {len(selected)} transactions."
+            )
+
+    def set_search_delay(self, delay_ms):
+        """Adjust search delay (useful for performance tuning)"""
+        self.search_delay = delay_ms
     
     def toggle_search(self):
         """Toggle the visibility of the search section"""
         if self.search_group.isVisible():
+            # Stop any pending search operations immediately
+            self.search_timer.stop()
+            
             self.search_group.setVisible(False)
             self.search_toggle_btn.setText("🔍 Show Search")
             # Clear search when hiding
@@ -808,10 +1136,19 @@ class FeeTrackerApp(QMainWindow):
     
     def clear_search(self):
         """Clear search and show all transactions"""
+        # Stop any pending search operations
+        self.search_timer.stop()
+        
+        # Check if there was actually a search term to clear
+        had_search_term = bool(self.search_input.text().strip())
+        
         self.search_input.clear()
         self.search_field_combo.setCurrentIndex(0)
-        self.update_display()
         self.search_results_label.setText("")
+        
+        # Only update display if there was a search active (optimization)
+        if had_search_term:
+            self.update_display()
     
     def edit_transaction(self, transaction):
         """Edit a transaction"""
