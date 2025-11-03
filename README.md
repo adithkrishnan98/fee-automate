@@ -40,9 +40,58 @@ s✨ **Dynamic Category Management**
 
 ## Installation
 
-1. Make sure Python 3.7+ is installed on your system
+### Prerequisites
 
-2. Install dependencies:
+1. **Check Python Installation:**
+   ```bash
+   python3 --version
+   ```
+   Make sure Python 3.7+ is installed on your system.
+
+### Installing Dependencies
+
+#### Method 1: Using Virtual Environment (Recommended)
+
+If you encounter an "externally-managed-environment" error when installing packages, use a virtual environment:
+
+1. **Navigate to the project directory:**
+   ```bash
+   cd path/to/fee-automate
+   ```
+
+2. **Create a virtual environment:**
+   ```bash
+   python3 -m venv venv
+   ```
+
+3. **Activate the virtual environment:**
+   ```bash
+   # On macOS/Linux:
+   source venv/bin/activate
+   
+   # On Windows:
+   venv\Scripts\activate
+   ```
+
+4. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+5. **Run the application:**
+   ```bash
+   python fee_tracker.py
+   ```
+
+**Note:** Always activate the virtual environment before running the application:
+```bash
+source venv/bin/activate  # Then run your scripts
+```
+
+#### Method 2: Direct Installation
+
+If you don't encounter the externally-managed-environment error:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -51,6 +100,40 @@ Or install PySide6 directly:
 ```bash
 pip install PySide6
 ```
+
+#### Method 3: Alternative Solutions
+
+If you're still having issues, try one of these alternatives:
+
+**Option A - User Installation:**
+```bash
+pip3 install --user PySide6
+```
+
+**Option B - Using pipx (for application installation):**
+```bash
+brew install pipx  # On macOS
+pipx install PySide6
+```
+
+**Option C - Homebrew (macOS only):**
+```bash
+brew install python-tk  # If available
+```
+
+### Troubleshooting Installation Issues
+
+**Problem:** `error: externally-managed-environment`
+**Solution:** Use Method 1 (Virtual Environment) above - this is the recommended approach.
+
+**Problem:** `python: command not found`
+**Solution:** Use `python3` instead of `python` on macOS/Linux systems.
+
+**Problem:** `pip: command not found`
+**Solution:** Use `pip3` instead of `pip`, or install pip: `python3 -m ensurepip --upgrade`
+
+**Problem:** Permission denied errors
+**Solution:** Never use `sudo` with pip. Use virtual environment or `--user` flag instead.
 
 ## Usage
 
