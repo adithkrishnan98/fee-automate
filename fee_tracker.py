@@ -8,15 +8,16 @@ import sys
 import csv
 import re
 import json
+import copy
 from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
     QLabel, QGroupBox, QHeaderView, QMessageBox, QLineEdit, QComboBox,
     QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QGridLayout,
-    QCheckBox
+    QCheckBox, QDateEdit, QListWidget, QListWidgetItem, QMenuBar, QMenu
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QDate
 from PySide6.QtGui import QFont, QColor
 
 # Import student name mappings
@@ -38,13 +39,39 @@ class EditTransactionDialog(QDialog):
         """Initialize the dialog UI"""
         layout = QFormLayout(self)
         
-        # Name field (read-only)
-        self.name_label = QLabel(self.transaction['name'])
-        layout.addRow("Name:", self.name_label)
+        # Name field (editable)
+        self.name_input = QLineEdit(self.transaction['name'])
+        layout.addRow("Name:", self.name_input)
         
-        # Date field (read-only)
-        self.date_label = QLabel(self.transaction['date'])
-        layout.addRow("Date:", self.date_label)
+        # Date field (editable)
+        self.date_edit = QDateEdit()
+        self.date_edit.setCalendarPopup(True)
+        self.date_edit.setDisplayFormat("dd-MM-yyyy")
+        
+        # Parse the date from the transaction (format can be DD-MM-YYYY HH:MM:SS or DD-MM-YYYY or DD/MM/YYYY)
+        date_str = self.transaction['date']
+        # Remove time component if present
+        if ' ' in date_str:
+            date_str = date_str.split(' ')[0]
+        
+        # Try splitting by hyphen first (the actual format from CSV)
+        date_parts = date_str.split('-')
+        if len(date_parts) != 3:
+            # Try splitting by slash as fallback
+            date_parts = date_str.split('/')
+        
+        if len(date_parts) == 3:
+            try:
+                day, month, year = date_parts
+                self.date_edit.setDate(QDate(int(year), int(month), int(day)))
+            except ValueError:
+                # If parsing fails, use current date
+                self.date_edit.setDate(QDate.currentDate())
+        else:
+            # If format is unexpected, use current date
+            self.date_edit.setDate(QDate.currentDate())
+        
+        layout.addRow("Date:", self.date_edit)
         
         # Amount field (editable)
         self.amount_spinbox = QDoubleSpinBox()
@@ -70,11 +97,441 @@ class EditTransactionDialog(QDialog):
     
     def get_updated_transaction(self):
         """Return the updated transaction data"""
+        # Format date back to DD-MM-YYYY (matching the original CSV format)
+        # Preserve the time component if it exists in the original
+        date = self.date_edit.date()
+        formatted_date = date.toString("dd-MM-yyyy")
+        
+        # If original date had time component, append it back
+        original_date = self.transaction['date']
+        if ' ' in original_date:
+            time_component = ' '.join(original_date.split(' ')[1:])
+            formatted_date = f"{formatted_date} {time_component}"
+        
         return {
             **self.transaction,
+            'name': self.name_input.text(),
+            'date': formatted_date,
             'amount': self.amount_spinbox.value(),
             'category': self.category_combo.currentText()
         }
+
+
+class CategoryManagerDialog(QDialog):
+    """Dialog for managing fee categories"""
+    
+    def __init__(self, categories, parent=None):
+        super().__init__(parent)
+        self.categories = copy.deepcopy(categories)  # Deep copy to avoid reference issues
+        self.setWindowTitle("Manage Categories")
+        self.setModal(True)
+        self.setMinimumSize(600, 400)
+        self.init_ui()
+    
+    def init_ui(self):
+        """Initialize the category manager UI"""
+        layout = QVBoxLayout(self)
+        
+        # Title
+        title_label = QLabel("📂 Category Management")
+        title_font = QFont()
+        title_font.setPointSize(16)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+        
+        # Instructions
+        info_label = QLabel("Add, edit, or delete fee categories. Categories with fixed amounts will auto-categorize transactions.")
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #666; padding: 10px; background-color: #f5f5f5; border-radius: 5px;")
+        layout.addWidget(info_label)
+        
+        # Main content area
+        content_layout = QHBoxLayout()
+        
+        # Left side - Category list
+        left_layout = QVBoxLayout()
+        left_layout.addWidget(QLabel("Existing Categories:"))
+        
+        self.category_list = QListWidget()
+        self.category_list.setMinimumWidth(300)
+        self.update_category_list()
+        self.category_list.itemSelectionChanged.connect(self.on_category_selected)
+        left_layout.addWidget(self.category_list)
+        
+        # List buttons
+        list_btn_layout = QHBoxLayout()
+        
+        self.delete_btn = QPushButton("🗑️ Delete")
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                padding: 5px 15px;
+                border-radius: 3px;
+            }
+            QPushButton:hover:enabled {
+                background-color: #d32f2f;
+            }
+            QPushButton:disabled {
+                background-color: #ccc;
+            }
+        """)
+        self.delete_btn.clicked.connect(self.delete_category)
+        list_btn_layout.addWidget(self.delete_btn)
+        
+        list_btn_layout.addStretch()
+        left_layout.addLayout(list_btn_layout)
+        content_layout.addLayout(left_layout)
+        
+        # Right side - Add/Edit form
+        right_layout = QVBoxLayout()
+        form_label = QLabel("Add/Edit Category:")
+        form_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #333;")
+        right_layout.addWidget(form_label)
+        
+        form_widget = QWidget()
+        form_widget.setStyleSheet("background-color: #fafafa; border: 1px solid #ddd; border-radius: 5px;")
+        form_layout = QFormLayout(form_widget)
+        
+        # Category name
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("e.g., Piano Lessons")
+        self.name_input.setStyleSheet("""
+            QLineEdit {
+                background-color: white;
+                color: #000;
+                padding: 8px;
+                border: 2px solid #ccc;
+                border-radius: 4px;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border: 2px solid #2196F3;
+            }
+        """)
+        
+        name_label = QLabel("Category Name:")
+        name_label.setStyleSheet("color: #333; font-weight: bold;")
+        form_layout.addRow(name_label, self.name_input)
+        
+        # Fee amount
+        self.fee_input = QDoubleSpinBox()
+        self.fee_input.setRange(0, 999999)
+        self.fee_input.setDecimals(2)
+        self.fee_input.setValue(500.0)
+        self.fee_input.setPrefix("₹")
+        self.fee_input.setSpecialValueText("Variable Amount")
+        self.fee_input.setStyleSheet("""
+            QDoubleSpinBox {
+                background-color: white;
+                color: #000;
+                padding: 8px;
+                border: 2px solid #ccc;
+                border-radius: 4px;
+                font-size: 13px;
+            }
+            QDoubleSpinBox:focus {
+                border: 2px solid #2196F3;
+            }
+        """)
+        
+        fee_label = QLabel("Fixed Amount:")
+        fee_label.setStyleSheet("color: #333; font-weight: bold;")
+        form_layout.addRow(fee_label, self.fee_input)
+        
+        # Help text
+        help_text = QLabel("💡 Set amount to 0 for variable amounts (donations, etc.)")
+        help_text.setStyleSheet("color: #666; font-size: 11px; padding: 5px;")
+        form_layout.addRow("", help_text)
+        
+        right_layout.addWidget(form_widget)
+        
+        # Form buttons
+        form_btn_layout = QHBoxLayout()
+        
+        self.add_btn = QPushButton("➕ Add Category")
+        self.add_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        self.add_btn.clicked.connect(self.add_category)
+        form_btn_layout.addWidget(self.add_btn)
+        
+        self.update_btn = QPushButton("✏️ Update Category")
+        self.update_btn.setEnabled(False)
+        self.update_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover:enabled {
+                background-color: #F57C00;
+            }
+            QPushButton:disabled {
+                background-color: #ccc;
+            }
+        """)
+        self.update_btn.clicked.connect(self.update_category)
+        form_btn_layout.addWidget(self.update_btn)
+        
+        self.clear_btn = QPushButton("🔄 Clear")
+        self.clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #616161;
+            }
+        """)
+        self.clear_btn.clicked.connect(self.clear_form)
+        form_btn_layout.addWidget(self.clear_btn)
+        
+        right_layout.addLayout(form_btn_layout)
+        right_layout.addStretch()
+        
+        content_layout.addLayout(right_layout)
+        layout.addLayout(content_layout)
+        
+        # Dialog buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        self.save_btn = QPushButton("💾 Save")
+        self.save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                padding: 10px 30px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+        """)
+        self.save_btn.clicked.connect(self.accept)
+        button_layout.addWidget(self.save_btn)
+        
+        cancel_btn = QPushButton("❌ Cancel")
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: white;
+                padding: 10px 30px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #616161;
+            }
+        """)
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def update_category_list(self):
+        """Update the category list display"""
+        self.category_list.clear()
+        for category in self.categories:
+            if category['fee'] is None or category['fee'] == 0:
+                text = f"📊 {category['name']} (Variable Amount)"
+            else:
+                text = f"💰 {category['name']} (₹{category['fee']:.0f})"
+            
+            item = QListWidgetItem(text)
+            item.setData(Qt.UserRole, category)
+            self.category_list.addItem(item)
+    
+    def on_category_selected(self):
+        """Handle category selection"""
+        current_item = self.category_list.currentItem()
+        if current_item:
+            category = current_item.data(Qt.UserRole)
+            self.name_input.setText(category['name'])
+            self.fee_input.setValue(category['fee'] if category['fee'] is not None else 0)
+            
+            self.delete_btn.setEnabled(True)
+            self.update_btn.setEnabled(True)
+            self.add_btn.setText("➕ Add New Category")
+        else:
+            self.delete_btn.setEnabled(False)
+            self.update_btn.setEnabled(False)
+    
+    def add_category(self):
+        """Add a new category"""
+        name = self.name_input.text().strip()
+        fee = self.fee_input.value()
+        
+        if not name:
+            QMessageBox.warning(self, "Invalid Input", "Please enter a category name.")
+            return
+        
+        # Check for duplicate names
+        if any(cat['name'].lower() == name.lower() for cat in self.categories):
+            QMessageBox.warning(self, "Duplicate Category", f"Category '{name}' already exists.")
+            return
+        
+        # Check for duplicate variable amount categories (fee = 0 or null)
+        if fee == 0:
+            existing_variable = next((cat for cat in self.categories if cat['fee'] is None or cat['fee'] == 0), None)
+            if existing_variable:
+                QMessageBox.warning(
+                    self, 
+                    "Variable Amount Exists", 
+                    f"A variable amount category '{existing_variable['name']}' already exists.\n\n"
+                    f"You can only have one variable amount category for miscellaneous/donation transactions.\n"
+                    f"Please use a fixed amount instead or edit the existing variable category."
+                )
+                return
+        
+        # Check for duplicate fee amounts (only for non-zero fees)
+        if fee > 0:
+            existing_category = next((cat for cat in self.categories if cat['fee'] == fee), None)
+            if existing_category:
+                QMessageBox.warning(
+                    self, 
+                    "Duplicate Amount", 
+                    f"Amount ₹{fee:.0f} is already used by '{existing_category['name']}'.\n\n"
+                    f"Each category must have a unique fixed amount for proper auto-categorization.\n"
+                    f"Please use a different amount or set to 0 for variable amounts."
+                )
+                return
+        
+        # Add category
+        new_category = {
+            'name': name,
+            'fee': fee if fee > 0 else None
+        }
+        self.categories.append(new_category)
+        
+        self.update_category_list()
+        self.clear_form()
+        
+        QMessageBox.information(self, "Success", f"Category '{name}' added successfully!")
+    
+    def update_category(self):
+        """Update selected category"""
+        current_item = self.category_list.currentItem()
+        if not current_item:
+            return
+        
+        name = self.name_input.text().strip()
+        fee = self.fee_input.value()
+        
+        if not name:
+            QMessageBox.warning(self, "Invalid Input", "Please enter a category name.")
+            return
+        
+        # Get selected category from the list item
+        selected_category = current_item.data(Qt.UserRole)
+        old_name = selected_category['name']
+        
+        # Find the actual category in self.categories list by matching the old values
+        category_to_update = None
+        for cat in self.categories:
+            if cat['name'] == old_name and cat['fee'] == selected_category['fee']:
+                category_to_update = cat
+                break
+        
+        if not category_to_update:
+            QMessageBox.warning(self, "Error", "Could not find category to update.")
+            return
+        
+        # Check for duplicate names (excluding current)
+        if any(cat['name'].lower() == name.lower() and cat is not category_to_update for cat in self.categories):
+            QMessageBox.warning(self, "Duplicate Category", f"Category '{name}' already exists.")
+            return
+        
+        # Check for duplicate variable amount categories (excluding current)
+        if fee == 0:
+            existing_variable = next((cat for cat in self.categories if (cat['fee'] is None or cat['fee'] == 0) and cat is not category_to_update), None)
+            if existing_variable:
+                QMessageBox.warning(
+                    self, 
+                    "Variable Amount Exists", 
+                    f"A variable amount category '{existing_variable['name']}' already exists.\n\n"
+                    f"You can only have one variable amount category for miscellaneous/donation transactions.\n"
+                    f"Please use a fixed amount instead or edit the existing variable category."
+                )
+                return
+        
+        # Check for duplicate fee amounts (only for non-zero fees, excluding current)
+        if fee > 0:
+            existing_category = next((cat for cat in self.categories if cat['fee'] == fee and cat is not category_to_update), None)
+            if existing_category:
+                QMessageBox.warning(
+                    self, 
+                    "Duplicate Amount", 
+                    f"Amount ₹{fee:.0f} is already used by '{existing_category['name']}'.\n\n"
+                    f"Each category must have a unique fixed amount for proper auto-categorization.\n"
+                    f"Please use a different amount or set to 0 for variable amounts."
+                )
+                return
+        
+        # Update the category in the list
+        category_to_update['name'] = name
+        category_to_update['fee'] = fee if fee > 0 else None
+        
+        # Refresh the list display
+        self.update_category_list()
+        self.clear_form()
+        
+        QMessageBox.information(self, "Success", f"Category updated from '{old_name}' to '{name}'!")
+    
+    def delete_category(self):
+        """Delete selected category"""
+        current_item = self.category_list.currentItem()
+        if not current_item:
+            return
+        
+        category = current_item.data(Qt.UserRole)
+        
+        reply = QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete the category '{category['name']}'?\n\n"
+            f"This action cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.categories.remove(category)
+            self.update_category_list()
+            self.clear_form()
+            
+            QMessageBox.information(self, "Deleted", f"Category '{category['name']}' deleted successfully!")
+    
+    def clear_form(self):
+        """Clear the form inputs"""
+        self.name_input.clear()
+        self.fee_input.setValue(500.0)
+        self.category_list.clearSelection()
+        
+        self.delete_btn.setEnabled(False)
+        self.update_btn.setEnabled(False)
+        self.add_btn.setText("➕ Add Category")
+    
+    def get_categories(self):
+        """Return the updated categories"""
+        return self.categories
 
 
 class FeeTrackerApp(QMainWindow):
@@ -111,27 +568,35 @@ class FeeTrackerApp(QMainWindow):
     
     def load_categories(self):
         """Load categories from JSON configuration file"""
-        config_file = Path(__file__).parent / 'fee_categories.json'
+        self.config_file = Path(__file__).parent / 'fee_categories.json'
         try:
-            with open(config_file, 'r', encoding='utf-8') as f:
+            with open(self.config_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 return data['categories']
         except FileNotFoundError:
             # Return default categories if file doesn't exist
-            return [
-                {"name": "Namasankeerthanam", "fee": 502.0},
-                {"name": "Shloka Class", "fee": 503.0},
-                {"name": "Rishabhaa Class", "fee": 750.0},
-                {"name": "Donations", "fee": None}
+            default_categories = [
+                {"name": "Uncategorised", "fee": None}
             ]
+            # Create the file with defaults
+            self.save_categories(default_categories)
+            return default_categories
         except Exception as e:
             QMessageBox.warning(self, "Warning", f"Error loading categories: {e}\nUsing defaults.")
             return [
-                {"name": "Namasankeerthanam", "fee": 502.0},
-                {"name": "Shloka Class", "fee": 503.0},
-                {"name": "Rishabhaa Class", "fee": 750.0},
-                {"name": "Donations", "fee": None}
+                {"name": "Uncategorised", "fee": None}
             ]
+    
+    def save_categories(self, categories):
+        """Save categories to JSON configuration file"""
+        try:
+            data = {"categories": categories}
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save categories: {e}")
+            return False
     
     def get_category_key(self, name, fee):
         """Generate a consistent category key for storage"""
@@ -146,6 +611,8 @@ class FeeTrackerApp(QMainWindow):
         
     def init_ui(self):
         """Initialize the user interface"""
+    # Menu bar removed as per user request
+        
         # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -185,6 +652,39 @@ class FeeTrackerApp(QMainWindow):
         """)
         upload_btn.clicked.connect(self.upload_file)
         file_layout.addWidget(upload_btn)
+        
+        export_btn = QPushButton("💾 Export Summary")
+        export_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0b7dda;
+            }
+        """)
+        export_btn.clicked.connect(self.export_summary)
+        file_layout.addWidget(export_btn)
+        
+        # Category management button
+        category_btn = QPushButton("⚙️ Manage Categories")
+        category_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+        """)
+        category_btn.clicked.connect(self.manage_categories)
+        file_layout.addWidget(category_btn)
         
         main_layout.addLayout(file_layout)
         
@@ -432,10 +932,11 @@ class FeeTrackerApp(QMainWindow):
         
         main_layout.addWidget(self.table)
         
-        # Total amount section (below table)
-        total_layout = QHBoxLayout()
-        total_layout.addStretch()
+        # Bottom row: Total amount
+        bottom_layout = QHBoxLayout()
+        bottom_layout.addStretch()
         
+        # Total amount label (centered)
         self.total_label = QLabel("Total: ₹0")
         total_font = QFont()
         total_font.setPointSize(14)
@@ -448,27 +949,171 @@ class FeeTrackerApp(QMainWindow):
             border: 2px solid #fbc02d; 
             color: #f57f17;
         """)
-        total_layout.addWidget(self.total_label)
-        total_layout.addStretch()
+        bottom_layout.addWidget(self.total_label)
+        bottom_layout.addStretch()
         
-        main_layout.addLayout(total_layout)
+        main_layout.addLayout(bottom_layout)
+    
+    # Menu bar and related code removed as per user request
+    
+    def manage_categories(self):
+        """Open the category management dialog"""
+        dialog = CategoryManagerDialog(self.categories, self)
+        if dialog.exec() == QDialog.Accepted:
+            # Get updated categories
+            new_categories = dialog.get_categories()
+            
+            # Save to file
+            if self.save_categories(new_categories):
+                # Update in memory
+                old_categories = self.categories.copy()
+                self.categories = new_categories
+                
+                # Rebuild categorized_data structure
+                self.rebuild_categorized_data()
+                
+                # Rebuild summary UI with new categories
+                self.rebuild_summary_ui()
+                
+                # Re-categorize existing transactions if any
+                if self.transactions:
+                    self.recategorize_transactions()
+                else:
+                    # If no transactions, just update the summary display
+                    self.update_summary()
+                
+                # Update display
+                self.update_display()
+                
+                QMessageBox.information(
+                    self, 
+                    "Success", 
+                    f"Categories updated successfully!\n\n"
+                    f"Previous: {len(old_categories)} categories\n"
+                    f"Current: {len(new_categories)} categories"
+                )
+    
+    def rebuild_categorized_data(self):
+        """Rebuild the categorized_data structure when categories change"""
+        old_data = self.categorized_data.copy()
         
-        # Export button
-        export_btn = QPushButton("💾 Export Summary")
-        export_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2196F3;
-                color: white;
-                padding: 10px 20px;
-                border-radius: 5px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0b7dda;
-            }
-        """)
-        export_btn.clicked.connect(self.export_summary)
-        main_layout.addWidget(export_btn)
+        # Create new structure
+        self.categorized_data = {}
+        for cat in self.categories:
+            category_key = self.get_category_key(cat['name'], cat['fee'])
+            self.categorized_data[category_key] = []
+        
+        # Clear transactions from old categories
+        for transaction in self.transactions:
+            transaction['category'] = None  # Reset category
+    
+    def rebuild_summary_ui(self):
+        """Rebuild the summary UI when categories change"""
+        # Clear existing labels
+        for i in reversed(range(self.summary_layout.count())):
+            widget = self.summary_layout.itemAt(i).widget()
+            if widget:
+                widget.deleteLater()
+        
+        # Clear the dictionary
+        self.category_labels.clear()
+        
+        # Recreate labels based on new categories
+        summary_font = QFont()
+        summary_font.setPointSize(11)
+        summary_font.setBold(True)
+        
+        # Calculate how many items per row (4 per row for good spacing)
+        items_per_row = 4
+        row = 0
+        col = 0
+        
+        for cat in self.categories:
+            category_key = self.get_category_key(cat['name'], cat['fee'])
+            label = QLabel(f"{cat['name']}: 0 entries (₹0)")
+            label.setFont(summary_font)
+            label.setStyleSheet("padding: 10px; background-color: #e3f2fd; border-radius: 5px; color: #1a237e;")
+            self.category_labels[category_key] = label
+            
+            # Add to grid layout
+            self.summary_layout.addWidget(label, row, col)
+            col += 1
+            if col >= items_per_row:
+                col = 0
+                row += 1
+                if row >= 2:  # Maximum 2 rows
+                    break
+    
+    def recategorize_transactions(self):
+        """Re-categorize all transactions based on updated categories"""
+        if not self.transactions:
+            return
+        
+        # Clear all categorized data
+        for category_key in self.categorized_data:
+            self.categorized_data[category_key] = []
+        
+        # Re-categorize each transaction
+        for transaction in self.transactions:
+            new_category = self.categorize_transaction(transaction['amount'])
+            transaction['category'] = new_category
+            self.categorized_data[new_category].append(transaction)
+        
+        QMessageBox.information(
+            self,
+            "Re-categorization Complete",
+            f"Successfully re-categorized {len(self.transactions)} transactions based on updated categories."
+        )
+    
+    def refresh_categories(self):
+        """Reload categories from file"""
+        try:
+            old_count = len(self.categories)
+            self.categories = self.load_categories()
+            new_count = len(self.categories)
+            
+            # Rebuild structure
+            self.rebuild_categorized_data()
+            
+            # Re-categorize if needed
+            if self.transactions:
+                self.recategorize_transactions()
+            
+            # Update display
+            self.update_display()
+            
+            QMessageBox.information(
+                self,
+                "Categories Refreshed",
+                f"Categories reloaded from file.\n\nCategories: {new_count} (was {old_count})"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to refresh categories: {e}")
+    
+    def show_about(self):
+        """Show about dialog"""
+        QMessageBox.about(
+            self,
+            "About Music Class Fee Tracker",
+            """
+            <h3>🎵 Music Class Fee Tracker</h3>
+            <p><b>Version:</b> 2.0</p>
+            <p><b>Author:</b> Your Name</p>
+            <br>
+            <p>A comprehensive tool for tracking and categorizing music class fees from bank statements.</p>
+            <br>
+            <p><b>Features:</b></p>
+            <ul>
+                <li>📤 CSV file processing</li>
+                <li>🔍 Smart transaction categorization</li>
+                <li>📂 Dynamic category management</li>
+                <li>🔍 Advanced search and filtering</li>
+                <li>✏️ Transaction editing</li>
+                <li>💾 Export functionality</li>
+            </ul>
+            """
+        )
         
     def upload_file(self):
         """Handle file upload and processing"""
@@ -701,11 +1346,17 @@ class FeeTrackerApp(QMainWindow):
                     self.table.setCellWidget(row, 0, checkbox_widget)
                 
                     # Add data to cells (shifted by 1 column)
-                    self.table.setItem(row, 1, QTableWidgetItem(transaction['date']))
-                    self.table.setItem(row, 2, QTableWidgetItem(transaction['name']))
+                    date_item = QTableWidgetItem(transaction['date'])
+                    date_item.setFlags(date_item.flags() & ~Qt.ItemIsEditable)
+                    self.table.setItem(row, 1, date_item)
+                    
+                    name_item = QTableWidgetItem(transaction['name'])
+                    name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+                    self.table.setItem(row, 2, name_item)
                     
                     amount_item = QTableWidgetItem(f"₹{transaction['amount']:.2f}")
                     amount_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    amount_item.setFlags(amount_item.flags() & ~Qt.ItemIsEditable)
                     self.table.setItem(row, 3, amount_item)
                     
                     # Display category without amount
@@ -715,14 +1366,18 @@ class FeeTrackerApp(QMainWindow):
                     category_item.setForeground(text_colors[transaction['category']])
                     category_item.setTextAlignment(Qt.AlignCenter)
                     category_item.setFont(QFont("", -1, QFont.Bold))
+                    category_item.setFlags(category_item.flags() & ~Qt.ItemIsEditable)
                     self.table.setItem(row, 4, category_item)
                     
                     desc_item = QTableWidgetItem(transaction['description'][:50] + "..." 
                                                 if len(transaction['description']) > 50 
                                                 else transaction['description'])
+                    desc_item.setFlags(desc_item.flags() & ~Qt.ItemIsEditable)
                     self.table.setItem(row, 5, desc_item)
                     
-                    self.table.setItem(row, 6, QTableWidgetItem(transaction['reference']))
+                    ref_item = QTableWidgetItem(transaction['reference'])
+                    ref_item.setFlags(ref_item.flags() & ~Qt.ItemIsEditable)
+                    self.table.setItem(row, 6, ref_item)
                     
                     row += 1
         
@@ -817,21 +1472,41 @@ class FeeTrackerApp(QMainWindow):
     def _filter_transactions_fast(self, search_term, search_field):
         """Fast transaction filtering using optimized logic"""
         if search_field == "All":
+            # For "All" search, do exact amount matching but substring for text fields
             return [t for t in self.transactions if (
                 search_term in t['name'].lower() or
                 search_term in t['category'].lower() or
                 search_term in t['description'].lower() or
-                search_term in str(t['amount'])
+                self._amount_matches(search_term, t['amount'])
             )]
         elif search_field == "Name":
             return [t for t in self.transactions if search_term in t['name'].lower()]
         elif search_field == "Amount":
-            return [t for t in self.transactions if search_term in str(t['amount'])]
+            # For amount-specific search, use smart matching
+            return [t for t in self.transactions if self._amount_matches(search_term, t['amount'])]
         elif search_field == "Category":
             return [t for t in self.transactions if search_term in t['category'].lower()]
         elif search_field == "Description":
             return [t for t in self.transactions if search_term in t['description'].lower()]
         return []
+    
+    def _amount_matches(self, search_term, amount):
+        """Smart amount matching that handles both exact and partial matches intelligently"""
+        formatted_amount = f"{amount:.2f}"
+        
+        # If search term looks like a complete amount (has decimal point), do exact match
+        if '.' in search_term:
+            return formatted_amount == search_term
+        
+        # Otherwise, check if it matches the whole number part exactly
+        # This prevents "2" from matching "502" but allows "2" to match "2.00"
+        try:
+            # Try to parse as a number
+            search_num = float(search_term)
+            return amount == search_num or formatted_amount.startswith(search_term + '.')
+        except ValueError:
+            # If not a valid number, fall back to substring match
+            return search_term in formatted_amount
     
     def _update_table_efficiently(self, filtered_transactions):
         """Efficiently update table without recreating widgets unnecessarily"""
@@ -856,12 +1531,18 @@ class FeeTrackerApp(QMainWindow):
             self.table.setCellWidget(row, 0, checkbox_widget)
             
             # Set basic data (shifted by 1 column)
-            self.table.setItem(row, 1, QTableWidgetItem(transaction['date']))
-            self.table.setItem(row, 2, QTableWidgetItem(transaction['name']))
+            date_item = QTableWidgetItem(transaction['date'])
+            date_item.setFlags(date_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 1, date_item)
+            
+            name_item = QTableWidgetItem(transaction['name'])
+            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 2, name_item)
             
             # Amount with alignment
             amount_item = QTableWidgetItem(f"₹{transaction['amount']:.2f}")
             amount_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            amount_item.setFlags(amount_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 3, amount_item)
             
             # Category with cached colors
@@ -871,15 +1552,20 @@ class FeeTrackerApp(QMainWindow):
             category_item.setForeground(text_colors[transaction['category']])
             category_item.setTextAlignment(Qt.AlignCenter)
             category_item.setFont(QFont("", -1, QFont.Bold))
+            category_item.setFlags(category_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 4, category_item)
             
             # Description (truncated)
             desc_text = (transaction['description'][:50] + "..." 
                         if len(transaction['description']) > 50 
                         else transaction['description'])
-            self.table.setItem(row, 5, QTableWidgetItem(desc_text))
+            desc_item = QTableWidgetItem(desc_text)
+            desc_item.setFlags(desc_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 5, desc_item)
             
-            self.table.setItem(row, 6, QTableWidgetItem(transaction['reference']))
+            ref_item = QTableWidgetItem(transaction['reference'])
+            ref_item.setFlags(ref_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 6, ref_item)
     
 
     def on_checkbox_toggled(self, transaction_id, checked):
@@ -1152,29 +1838,39 @@ class FeeTrackerApp(QMainWindow):
     
     def edit_transaction(self, transaction):
         """Edit a transaction"""
+        
         # Get list of available categories for the dropdown
         available_categories = list(self.categorized_data.keys())
         dialog = EditTransactionDialog(transaction, available_categories, self)
         if dialog.exec() == QDialog.Accepted:
-            # Get updated values
-            new_amount = dialog.amount_spinbox.value()
-            new_category = dialog.category_combo.currentText()
+            # Get all updated values from the dialog
+            updated_transaction = dialog.get_updated_transaction()
+                        
             old_category = transaction['category']
+            new_category = updated_transaction['category']
             
-            # Update the transaction object in place (more efficient)
-            transaction['amount'] = new_amount
-            
-            # Only update category if it changed
+            # Update all transaction fields (this updates both self.transactions and categorized_data since they're references)
+            transaction['name'] = updated_transaction['name']
+            transaction['date'] = updated_transaction['date']
+            transaction['amount'] = updated_transaction['amount']
+            transaction['category'] = new_category  # Always update category
+                        
+            # Handle category change if necessary
             if old_category != new_category:
                 # Remove from old category
                 self.categorized_data[old_category].remove(transaction)
                 # Add to new category
                 self.categorized_data[new_category].append(transaction)
-                # Update category in transaction
-                transaction['category'] = new_category
             
-            # Refresh display
+            # Refresh display to show changes
             self.update_display()
+            
+            # Show confirmation message
+            QMessageBox.information(
+                self, 
+                "Success", 
+                f"Transaction updated successfully!\n\nName: {transaction['name']}\nDate: {transaction['date']}\nAmount: ₹{transaction['amount']:.2f}\nCategory: {transaction['category']}"
+            )
     
     def delete_transaction(self, transaction):
         """Delete a transaction"""
