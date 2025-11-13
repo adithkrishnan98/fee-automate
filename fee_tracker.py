@@ -540,6 +540,657 @@ class CategoryManagerDialog(QDialog):
         return self.categories
 
 
+class StudentManagerDialog(QDialog):
+    """Dialog for managing student name mappings"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        from student_mappings import get_all_mappings, save_student_mappings
+        self.get_all_mappings = get_all_mappings
+        self.save_student_mappings = save_student_mappings
+        self.mappings = get_all_mappings()
+        self.setWindowTitle("Manage Student Names")
+        self.setModal(True)
+        self.setMinimumSize(800, 600)
+        self.init_ui()
+    
+    def init_ui(self):
+        """Initialize the student manager UI"""
+        layout = QVBoxLayout(self)
+        
+        # Title
+        title_label = QLabel("👥 Student Name Management")
+        title_font = QFont()
+        title_font.setPointSize(16)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+        
+        # Instructions
+        info_label = QLabel(
+            "Manage student name mappings. Upload a CSV/Excel file with two columns:\n"
+            "Column 1: Short Name (from bank statement), Column 2: Full Student Name"
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #666; padding: 10px; background-color: #f5f5f5; border-radius: 5px;")
+        layout.addWidget(info_label)
+        
+        # Button row
+        btn_layout = QHBoxLayout()
+        
+        upload_csv_btn = QPushButton("📁 Import from CSV")
+        upload_csv_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        upload_csv_btn.clicked.connect(self.import_from_csv)
+        btn_layout.addWidget(upload_csv_btn)
+        
+        upload_excel_btn = QPushButton("📊 Import from Excel")
+        upload_excel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0b7dda;
+            }
+        """)
+        upload_excel_btn.clicked.connect(self.import_from_excel)
+        btn_layout.addWidget(upload_excel_btn)
+        
+        export_btn = QPushButton("💾 Export to Excel")
+        export_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+        """)
+        export_btn.clicked.connect(self.export_to_excel)
+        btn_layout.addWidget(export_btn)
+        
+        # Add student button
+        add_student_btn = QPushButton("➕ Add Student")
+        add_student_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        add_student_btn.clicked.connect(self.add_student)
+        btn_layout.addWidget(add_student_btn)
+        
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+        
+        # Search box
+        search_layout = QHBoxLayout()
+        search_label = QLabel("🔍 Search:")
+        search_label.setStyleSheet("font-weight: bold;")
+        search_layout.addWidget(search_label)
+        
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search by short name or full name...")
+        self.search_input.setStyleSheet("""
+            QLineEdit {
+                padding: 8px;
+                border: 2px solid #ccc;
+                border-radius: 5px;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border: 2px solid #2196F3;
+            }
+        """)
+        self.search_input.textChanged.connect(self.filter_table)
+        search_layout.addWidget(self.search_input)
+        
+        clear_search_btn = QPushButton("✕ Clear")
+        clear_search_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: white;
+                padding: 8px 15px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #616161;
+            }
+        """)
+        clear_search_btn.clicked.connect(self.clear_search)
+        search_layout.addWidget(clear_search_btn)
+        
+        layout.addLayout(search_layout)
+        
+        # Student list table
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Short Name", "Full Student Name", "Edit", "Delete"])
+        
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        
+        self.table.setAlternatingRowColors(True)
+        layout.addWidget(self.table)
+        
+        # Count label (must be created before calling update_table)
+        self.count_label = QLabel(f"Total Students: {len(self.mappings)}")
+        self.count_label.setStyleSheet("font-weight: bold; color: #1976D2; padding: 5px;")
+        layout.addWidget(self.count_label)
+        
+        # Now populate the table
+        self.update_table()
+        
+        # Dialog buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        save_btn = QPushButton("💾 Save Changes")
+        save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 10px 30px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        save_btn.clicked.connect(self.save_and_close)
+        button_layout.addWidget(save_btn)
+        
+        cancel_btn = QPushButton("❌ Cancel")
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: white;
+                padding: 10px 30px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #616161;
+            }
+        """)
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def update_table(self):
+        """Update the student table display"""
+        self.table.setRowCount(len(self.mappings))
+        
+        for row, (short_name, full_name) in enumerate(sorted(self.mappings.items())):
+            # Short name
+            short_item = QTableWidgetItem(short_name)
+            short_item.setFlags(short_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 0, short_item)
+            
+            # Full name (editable)
+            full_item = QTableWidgetItem(full_name)
+            self.table.setItem(row, 1, full_item)
+            
+            # Edit button
+            edit_btn = QPushButton("✏️ Edit")
+            edit_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2196F3;
+                    color: white;
+                    padding: 4px 10px;
+                    border-radius: 3px;
+                }
+                QPushButton:hover {
+                    background-color: #1976D2;
+                }
+            """)
+            edit_btn.clicked.connect(lambda checked, sn=short_name: self.edit_mapping(sn))
+            self.table.setCellWidget(row, 2, edit_btn)
+            
+            # Delete button
+            delete_btn = QPushButton("🗑️ Delete")
+            delete_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #f44336;
+                    color: white;
+                    padding: 4px 10px;
+                    border-radius: 3px;
+                }
+                QPushButton:hover {
+                    background-color: #d32f2f;
+                }
+            """)
+            delete_btn.clicked.connect(lambda checked, sn=short_name: self.delete_mapping(sn))
+            self.table.setCellWidget(row, 3, delete_btn)
+        
+        self.count_label.setText(f"Total Students: {len(self.mappings)}")
+    
+    def import_from_csv(self):
+        """Import student mappings from CSV file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Student Names CSV",
+            str(Path.home()),
+            "CSV Files (*.csv *.CSV);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            import csv
+            added_count = 0
+            updated_count = 0
+            
+            with open(file_path, 'r', encoding='utf-8') as f:
+                csv_reader = csv.reader(f)
+                # Skip header if present
+                first_row = next(csv_reader, None)
+                if first_row and ('short' in first_row[0].lower() or 'name' in first_row[0].lower()):
+                    # Header row, skip it
+                    pass
+                else:
+                    # Not a header, process it
+                    if first_row and len(first_row) >= 2:
+                        short_name = first_row[0].strip()
+                        full_name = first_row[1].strip()
+                        if short_name and full_name:
+                            if short_name in self.mappings:
+                                updated_count += 1
+                            else:
+                                added_count += 1
+                            self.mappings[short_name] = full_name
+                
+                # Process remaining rows
+                for row in csv_reader:
+                    if len(row) >= 2:
+                        short_name = row[0].strip()
+                        full_name = row[1].strip()
+                        if short_name and full_name:
+                            if short_name in self.mappings:
+                                updated_count += 1
+                            else:
+                                added_count += 1
+                            self.mappings[short_name] = full_name
+            
+            self.update_table()
+            QMessageBox.information(
+                self,
+                "Import Successful",
+                f"Imported student names:\n\n"
+                f"• Added: {added_count} new students\n"
+                f"• Updated: {updated_count} existing students\n"
+                f"• Total: {len(self.mappings)} students"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"Failed to import CSV:\n{str(e)}")
+    
+    def import_from_excel(self):
+        """Import student mappings from Excel file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Student Names Excel File",
+            str(Path.home()),
+            "Excel Files (*.xlsx *.xls);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            from openpyxl import load_workbook
+            added_count = 0
+            updated_count = 0
+            
+            wb = load_workbook(file_path, data_only=True)
+            sheet = wb.active
+            
+            for row_idx, row in enumerate(sheet.iter_rows(min_row=1, values_only=True), start=1):
+                # Skip header row
+                if row_idx == 1 and row[0] and ('short' in str(row[0]).lower() or 'name' in str(row[0]).lower()):
+                    continue
+                
+                if row and len(row) >= 2 and row[0] and row[1]:
+                    short_name = str(row[0]).strip()
+                    full_name = str(row[1]).strip()
+                    
+                    if short_name and full_name:
+                        if short_name in self.mappings:
+                            updated_count += 1
+                        else:
+                            added_count += 1
+                        self.mappings[short_name] = full_name
+            
+            wb.close()
+            self.update_table()
+            
+            QMessageBox.information(
+                self,
+                "Import Successful",
+                f"Imported student names:\n\n"
+                f"• Added: {added_count} new students\n"
+                f"• Updated: {updated_count} existing students\n"
+                f"• Total: {len(self.mappings)} students"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"Failed to import Excel:\n{str(e)}")
+    
+    def export_to_excel(self):
+        """Export current student mappings to Excel"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Student Names",
+            str(Path.home() / f"student_names_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"),
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment
+            
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Student Names"
+            
+            # Headers
+            ws['A1'] = "Short Name"
+            ws['B1'] = "Full Student Name"
+            
+            for cell in ['A1', 'B1']:
+                ws[cell].font = Font(bold=True, color="FFFFFF")
+                ws[cell].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                ws[cell].alignment = Alignment(horizontal="center", vertical="center")
+            
+            # Data
+            for row_idx, (short_name, full_name) in enumerate(sorted(self.mappings.items()), start=2):
+                ws[f'A{row_idx}'] = short_name
+                ws[f'B{row_idx}'] = full_name
+            
+            # Column widths
+            ws.column_dimensions['A'].width = 20
+            ws.column_dimensions['B'].width = 35
+            
+            wb.save(file_path)
+            
+            QMessageBox.information(
+                self,
+                "Export Successful",
+                f"Exported {len(self.mappings)} student names to:\n{Path(file_path).name}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export Excel:\n{str(e)}")
+    
+    def delete_mapping(self, short_name):
+        """Delete a student mapping"""
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete student mapping?\n\nShort Name: {short_name}\nFull Name: {self.mappings[short_name]}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            del self.mappings[short_name]
+            self.update_table()
+    
+    def edit_mapping(self, short_name):
+        """Edit a student mapping"""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Edit Student Mapping")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        form_layout = QFormLayout()
+        
+        # Short name input
+        short_name_input = QLineEdit(short_name)
+        short_name_input.setStyleSheet("padding: 8px; border: 2px solid #ccc; border-radius: 5px;")
+        form_layout.addRow("Short Name:", short_name_input)
+        
+        # Full name input
+        full_name_input = QLineEdit(self.mappings[short_name])
+        full_name_input.setStyleSheet("padding: 8px; border: 2px solid #ccc; border-radius: 5px;")
+        form_layout.addRow("Full Student Name:", full_name_input)
+        
+        layout.addLayout(form_layout)
+        
+        # Dialog buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+        
+        if dialog.exec() == QDialog.Accepted:
+            new_short_name = short_name_input.text().strip()
+            new_full_name = full_name_input.text().strip()
+            
+            if not new_short_name or not new_full_name:
+                QMessageBox.warning(self, "Invalid Input", "Both short name and full name are required.")
+                return
+            
+            # If short name changed, delete old mapping
+            if new_short_name != short_name:
+                if new_short_name in self.mappings:
+                    QMessageBox.warning(
+                        self, 
+                        "Duplicate Entry", 
+                        f"Short name '{new_short_name}' already exists!"
+                    )
+                    return
+                del self.mappings[short_name]
+            
+            # Update/add mapping
+            self.mappings[new_short_name] = new_full_name
+            self.update_table()
+            
+            # Clear search to show updated entry
+            if hasattr(self, 'search_input'):
+                self.search_input.clear()
+    
+    def add_student(self):
+        """Add a new student mapping"""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add New Student")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        form_layout = QFormLayout()
+        
+        # Short name input
+        short_name_input = QLineEdit()
+        short_name_input.setPlaceholderText("e.g., JOHN D")
+        short_name_input.setStyleSheet("padding: 8px; border: 2px solid #ccc; border-radius: 5px;")
+        form_layout.addRow("Short Name:", short_name_input)
+        
+        # Full name input
+        full_name_input = QLineEdit()
+        full_name_input.setPlaceholderText("e.g., John Doe")
+        full_name_input.setStyleSheet("padding: 8px; border: 2px solid #ccc; border-radius: 5px;")
+        form_layout.addRow("Full Student Name:", full_name_input)
+        
+        layout.addLayout(form_layout)
+        
+        # Help text
+        help_label = QLabel("💡 Short name should match how it appears in bank statements")
+        help_label.setStyleSheet("color: #666; font-size: 11px; padding: 5px;")
+        layout.addWidget(help_label)
+        
+        # Dialog buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+        
+        if dialog.exec() == QDialog.Accepted:
+            short_name = short_name_input.text().strip()
+            full_name = full_name_input.text().strip()
+            
+            if not short_name or not full_name:
+                QMessageBox.warning(self, "Invalid Input", "Both short name and full name are required.")
+                return
+            
+            # Check for duplicate
+            if short_name in self.mappings:
+                QMessageBox.warning(
+                    self, 
+                    "Duplicate Entry", 
+                    f"Short name '{short_name}' already exists with full name: {self.mappings[short_name]}\n\n"
+                    f"Please use a different short name or edit the existing entry."
+                )
+                return
+            
+            # Add new mapping
+            self.mappings[short_name] = full_name
+            self.update_table()
+            
+            # Clear search to show new entry
+            if hasattr(self, 'search_input'):
+                self.search_input.clear()
+            
+            QMessageBox.information(
+                self,
+                "Success",
+                f"Successfully added student:\n\n{short_name} → {full_name}"
+            )
+    
+    def clear_search(self):
+        """Clear the search box"""
+        self.search_input.clear()
+        self.update_table()
+    
+    def filter_table(self):
+        """Filter table based on search text"""
+        search_text = self.search_input.text().lower().strip()
+        
+        if not search_text:
+            self.update_table()
+            return
+        
+        # Filter mappings
+        filtered_mappings = {
+            short: full 
+            for short, full in self.mappings.items()
+            if search_text in short.lower() or search_text in full.lower()
+        }
+        
+        # Update table with filtered results
+        self.table.setRowCount(len(filtered_mappings))
+        
+        for row, (short_name, full_name) in enumerate(sorted(filtered_mappings.items())):
+            # Short name
+            short_item = QTableWidgetItem(short_name)
+            short_item.setFlags(short_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 0, short_item)
+            
+            # Full name (editable)
+            full_item = QTableWidgetItem(full_name)
+            self.table.setItem(row, 1, full_item)
+            
+            # Edit button
+            edit_btn = QPushButton("✏️ Edit")
+            edit_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2196F3;
+                    color: white;
+                    padding: 4px 10px;
+                    border-radius: 3px;
+                }
+                QPushButton:hover {
+                    background-color: #1976D2;
+                }
+            """)
+            edit_btn.clicked.connect(lambda checked, sn=short_name: self.edit_mapping(sn))
+            self.table.setCellWidget(row, 2, edit_btn)
+            
+            # Delete button
+            delete_btn = QPushButton("🗑️ Delete")
+            delete_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #f44336;
+                    color: white;
+                    padding: 4px 10px;
+                    border-radius: 3px;
+                }
+                QPushButton:hover {
+                    background-color: #d32f2f;
+                }
+            """)
+            delete_btn.clicked.connect(lambda checked, sn=short_name: self.delete_mapping(sn))
+            self.table.setCellWidget(row, 3, delete_btn)
+        
+        # Update count label
+        if len(filtered_mappings) < len(self.mappings):
+            self.count_label.setText(f"Showing {len(filtered_mappings)} of {len(self.mappings)} students")
+        else:
+            self.count_label.setText(f"Total Students: {len(self.mappings)}")
+    
+    def save_and_close(self):
+        """Save changes and close dialog"""
+        # Update mappings from table edits
+        for row in range(self.table.rowCount()):
+            short_name = self.table.item(row, 0).text()
+            full_name = self.table.item(row, 1).text()
+            self.mappings[short_name] = full_name
+        
+        # Save to JSON
+        if self.save_student_mappings(self.mappings):
+            # Reload mappings in the module
+            import student_mappings
+            student_mappings.STUDENT_NAME_MAPPINGS = self.mappings.copy()
+            
+            QMessageBox.information(
+                self,
+                "Saved",
+                f"Successfully saved {len(self.mappings)} student name mappings!"
+            )
+            self.accept()
+        else:
+            QMessageBox.critical(
+                self,
+                "Error",
+                "Failed to save student mappings. Please try again."
+            )
+
+
 class FeeTrackerApp(QMainWindow):
     """Main application window for fee tracking"""
     
@@ -750,6 +1401,23 @@ class FeeTrackerApp(QMainWindow):
         """)
         category_btn.clicked.connect(self.manage_categories)
         file_layout.addWidget(category_btn)
+        
+        # Student management button
+        student_btn = QPushButton("👥 Manage Students")
+        student_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #7B1FA2;
+            }
+        """)
+        student_btn.clicked.connect(self.manage_students)
+        file_layout.addWidget(student_btn)
         
         main_layout.addLayout(file_layout)
         
@@ -1077,6 +1745,50 @@ class FeeTrackerApp(QMainWindow):
                     f"Previous: {len(old_categories)} categories\n"
                     f"Current: {len(new_categories)} categories"
                 )
+    
+    def manage_students(self):
+        """Open the student name management dialog"""
+        dialog = StudentManagerDialog(self)
+        if dialog.exec() == QDialog.Accepted:
+            # Student mappings have been updated
+            # If there are transactions, ask if user wants to re-process them
+            if self.transactions:
+                reply = QMessageBox.question(
+                    self,
+                    "Re-process Transactions?",
+                    f"Student name mappings have been updated.\n\n"
+                    f"Would you like to re-apply the new name mappings to existing transactions?\n"
+                    f"(This will update {len(self.transactions)} transactions)",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes:
+                    # Re-apply name mappings to all transactions
+                    from student_mappings import get_full_name
+                    updated_count = 0
+                    
+                    for transaction in self.transactions:
+                        short_name = transaction.get('short_name', transaction['name'])
+                        new_full_name = get_full_name(short_name)
+                        
+                        if new_full_name != transaction['name']:
+                            transaction['name'] = new_full_name
+                            updated_count += 1
+                    
+                    # Refresh display
+                    self.update_display()
+                    
+                    # Auto-save if auto-save is enabled
+                    if hasattr(self, 'auto_save_file') and self.auto_save_file:
+                        self.auto_save_data()
+                    
+                    QMessageBox.information(
+                        self,
+                        "Success",
+                        f"Re-processed transactions with new student names!\n\n"
+                        f"Updated: {updated_count} transactions"
+                    )
     
     def rebuild_categorized_data(self):
         """Rebuild the categorized_data structure when categories change"""
