@@ -11,6 +11,7 @@ STUDENT_NAME_MAPPINGS = {
     # Names starting with A
     "ANJANA SW": "Anjana Swaminathan",
     "ARUMUGA K": "Shraddha Krishnan",
+    "M Abhir" : "Abirami Vinoth",
     
     # Names starting with B
     "BHAGEERAT": "Bhageerathan",
@@ -25,6 +26,7 @@ STUDENT_NAME_MAPPINGS = {
     
     # Names starting with D
     "DHARINI  N": "Dharini N",
+    "DHANA LAK" : "Deepa Krishnan",
     
     # Names starting with G
     "GOMATHI Y": "Gomathi Y",
@@ -57,22 +59,26 @@ STUDENT_NAME_MAPPINGS = {
     "Mrs VANET": "Mrs Vanitha",
     "Mrs V N J": "Mrs Jayanthi Sampath",
     "Mrs N LAL": "Mrs N Lalitha",
+    "Mr HARIPR" : "Haripriya",
     
     # Names starting with P
     "PREMALATH": "Premalatha",
+    "P K Brahm" : "P K Brahmavidya",
     
     # Names starting with R
     "R CHITRA": "R Chitra",
     "RAJI  CHA": "Raji Chandrasekaran",
     "RAJESWARI": "Rajeswari",
     "RAMARANI": "Ramarani",
+    "RAMYA SIV" : "Ramya Siva",
     
     # Names starting with S
     "S BHUVANE": "S Bhuvaneshwari",
     "S VENKATA": "S Venkatesh",
+    "S GAYATHR" : "Gayathri Nadhini",
     "SHANTHA S": "Shantha S",
     "SHANTHI L": "Shanthi Lakshman",
-    "SHARDHA R": "Shardha Rupa",
+    "SHARDHA R": "Shardha Ravibaskar",
     "SHOBANA": "Shobana Krishnan",
     "SRINIVASA": "Padmavathy Srinivasan",
     "Ms SRIPRI": "Ms Sripriya",
@@ -87,6 +93,7 @@ STUDENT_NAME_MAPPINGS = {
     
     # Additional names (add more as you identify them)
     "Ms LAKSHM": "Ms Lakshmi Devi",
+    "Vidya R" : "Vidya Vivek/MIL"
 }
 
 
@@ -94,12 +101,6 @@ def get_full_name(short_name):
     """
     Get full name from short name mapping
     Returns the short name (formatted) if no mapping found
-    
-    Args:
-        short_name (str): Short name from bank statement
-        
-    Returns:
-        str: Full student name or formatted short name
     """
     # Remove extra spaces
     short_name = " ".join(short_name.split())
