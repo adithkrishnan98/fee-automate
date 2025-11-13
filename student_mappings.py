@@ -1,126 +1,126 @@
 """
 Student Name Mapping System
 Maps short names from bank statements to full student names
-Edit this file to update student names
+Student mappings are now stored in 'student_name_mappings.json'
+Edit the JSON file to add new students
 """
 
-# Student name mappings dictionary
-# Key: Short name from bank statement
-# Value: Full student name
-STUDENT_NAME_MAPPINGS = {
-    # Names starting with A
-    "ANJANA SW": "Anjana Swaminathan",
-    "ARUMUGA K": "Shraddha Krishnan",
-    "M Abhir" : "Abirami Vinoth",
+import json
+from pathlib import Path
+
+# Global variable to hold mappings (loaded from JSON)
+STUDENT_NAME_MAPPINGS = {}
+
+def load_student_mappings():
+    """
+    Load student name mappings from JSON file
+    Creates an empty template file if it doesn't exist
     
-    # Names starting with B
-    "BHAGEERAT": "Bhageerathan",
-    "BHUPENDRA": "Bhupendran Sridhar",
-    "BHUVANA D": "Bhuvana Devendran",
-    "B PARVATH": "B Parvathi",
+    Returns:
+        dict: Student name mappings
+    """
+    json_file = Path(__file__).parent / 'student_name_mappings.json'
     
-    # Names starting with C
-    "CHANDRA R": "Chandra Ramesh",
-    "CHELLA PU": "Chella Pushpam",
-    "CHITHRA": "Chithra S",
+    try:
+        with open(json_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return data.get('mappings', {})
+    except FileNotFoundError:
+        # Create empty template file on first run
+        print(f"Info: {json_file} not found. Creating empty template file.")
+        template_data = {
+            "mappings": {},
+            "_comment": "Student name mappings for the Music Class Fee Tracker.",
+            "_instructions": "Add student mappings in the format: 'SHORTNAME': 'Full Student Name'",
+            "_example": {
+                "JOHN D": "John Doe",
+                "MARY S": "Mary Smith"
+            }
+        }
+        try:
+            with open(json_file, 'w', encoding='utf-8') as f:
+                json.dump(template_data, f, indent=2, ensure_ascii=False)
+            print(f"Created template file: {json_file}")
+        except Exception as create_error:
+            print(f"Warning: Could not create template file: {create_error}")
+        return {}
+    except json.JSONDecodeError as e:
+        print(f"Warning: Error parsing {json_file}: {e}. Using empty mappings.")
+        return {}
+    except Exception as e:
+        print(f"Warning: Error loading student mappings: {e}. Using empty mappings.")
+        return {}
+
+def save_student_mappings(mappings):
+    """
+    Save student name mappings to JSON file
     
-    # Names starting with D
-    "DHARINI  N": "Dharini N",
-    "DHANA LAK" : "Deepa Krishnan",
+    Args:
+        mappings (dict): Student name mappings to save
+        
+    Returns:
+        bool: True if saved successfully
+    """
+    json_file = Path(__file__).parent / 'student_name_mappings.json'
     
-    # Names starting with G
-    "GOMATHI Y": "Gomathi Y",
-    
-    # Names starting with H
-    "HEMALATHA": "Hemalatha Ramesh",
-    
-    # Names starting with I
-    "INDRANI  V": "Indrani Venkatesh",
-    
-    # Names starting with J
-    "JAYALAKSH": "Jayalakshmi",
-    
-    # Names starting with K
-    "KASI": "Kasi",
-    
-    # Names starting with L
-    "LAKSHMI R": "Lakshmi R",
-    "LALITHA S": "Lalitha S",
-    
-    # Names starting with M
-    "M KALAVAT": "M Kalavathi",
-    "M USHA": "M Usha Rani",
-    "Manisha": "Manisha Sharma",
-    "MEENA KAI": "Meena Kailash",
-    "MEENA SAN": "Meena Sankar",
-    "MEENAKSHI": "Meenakshi Sundaram",
-    "MEERA  RA": "Meera Ramesh",
-    "MRS GEETH": "Mrs Geetha Ramachandran",
-    "Mrs VANET": "Mrs Vanitha",
-    "Mrs V N J": "Mrs Jayanthi Sampath",
-    "Mrs N LAL": "Mrs N Lalitha",
-    "Mr HARIPR" : "Haripriya",
-    
-    # Names starting with P
-    "PREMALATH": "Premalatha",
-    "P K Brahm" : "P K Brahmavidya",
-    
-    # Names starting with R
-    "R CHITRA": "R Chitra",
-    "RAJI  CHA": "Raji Chandrasekaran",
-    "RAJESWARI": "Rajeswari",
-    "RAMARANI": "Ramarani",
-    "RAMYA SIV" : "Ramya Siva",
-    
-    # Names starting with S
-    "S BHUVANE": "S Bhuvaneshwari",
-    "S VENKATA": "S Venkatesh",
-    "S GAYATHR" : "Gayathri Nadhini",
-    "SHANTHA S": "Shantha S",
-    "SHANTHI L": "Shanthi Lakshman",
-    "SHARDHA R": "Shardha Ravibaskar",
-    "SHOBANA": "Shobana Krishnan",
-    "SRINIVASA": "Padmavathy Srinivasan",
-    "Ms SRIPRI": "Ms Sripriya",
-    "SUDHA  G": "Sudha Gopalakrishnan",
-    "SULOCHANA": "Sulochana",
-    "SUNDARA P": "Dhanalakshmi V",
-    
-    # Names starting with U
-    "USHA M": "Usha M",
-    "USHA MURL": "Usha Murli",
-    "V UMA SHA": "V Uma Shankar",
-    
-    # Additional names (add more as you identify them)
-    "Ms LAKSHM": "Ms Lakshmi Devi",
-    "Vidya R" : "Vidya Vivek/MIL"
-}
+    try:
+        data = {
+            "mappings": mappings,
+            "_comment": "Student name mappings for the Music Class Fee Tracker. Add new students here as they join."
+        }
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"Error saving student mappings: {e}")
+        return False
+
+# Load mappings on module import
+STUDENT_NAME_MAPPINGS = load_student_mappings()
 
 
 def get_full_name(short_name):
     """
     Get full name from short name mapping
     Returns the short name (formatted) if no mapping found
+    
+    Matching strategies (in order):
+    1. Exact match
+    2. Case-insensitive match
+    3. Space-removed match (e.g., "SUNDARA P" -> "SUNDARAP")
+    4. Space-removed case-insensitive match
     """
     # Remove extra spaces
     short_name = " ".join(short_name.split())
     
-    # Try exact match
+    # Strategy 1: Try exact match
     if short_name in STUDENT_NAME_MAPPINGS:
         return STUDENT_NAME_MAPPINGS[short_name]
     
-    # Try case-insensitive match
+    # Strategy 2: Try case-insensitive match
     for key, value in STUDENT_NAME_MAPPINGS.items():
         if key.lower() == short_name.lower():
             return value
     
-    # If no match, return formatted short name with [Unknown] marker
+    # Strategy 3: Try space-removed match
+    # Remove all spaces and try matching
+    short_name_no_space = short_name.replace(" ", "")
+    for key, value in STUDENT_NAME_MAPPINGS.items():
+        if key.replace(" ", "") == short_name_no_space:
+            return value
+    
+    # Strategy 4: Try space-removed case-insensitive match
+    for key, value in STUDENT_NAME_MAPPINGS.items():
+        if key.replace(" ", "").lower() == short_name_no_space.lower():
+            return value
+    
+    # If no match, return formatted short name
     return f"{short_name.title()}"
 
 
 def add_mapping(short_name, full_name):
     """
-    Add a new student name mapping
+    Add a new student name mapping and save to JSON file
     
     Args:
         short_name (str): Short name from bank statement
@@ -131,7 +131,7 @@ def add_mapping(short_name, full_name):
     """
     short_name = " ".join(short_name.split())
     STUDENT_NAME_MAPPINGS[short_name] = full_name
-    return True
+    return save_student_mappings(STUDENT_NAME_MAPPINGS)
 
 
 def get_all_mappings():
