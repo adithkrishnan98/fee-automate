@@ -5,17 +5,17 @@ A GUI application to categorize and track student fees from bank statements
 """
 
 import sys
-import csv
 import re
 import json
 import copy
+from datetime import datetime
 from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
     QLabel, QGroupBox, QHeaderView, QMessageBox, QLineEdit, QComboBox,
     QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox, QGridLayout,
-    QCheckBox, QDateEdit, QListWidget, QListWidgetItem, QMenuBar, QMenu
+    QCheckBox, QDateEdit, QListWidget, QListWidgetItem
 )
 from PySide6.QtCore import Qt, QTimer, QDate
 from PySide6.QtGui import QFont, QColor
@@ -349,6 +349,11 @@ class CategoryManagerDialog(QDialog):
     def update_category_list(self):
         """Update the category list display"""
         self.category_list.clear()
+        
+        # Create font for category items
+        item_font = QFont()
+        item_font.setPointSize(14)
+        
         for category in self.categories:
             if category['fee'] is None or category['fee'] == 0:
                 text = f"📊 {category['name']} (Variable Amount)"
@@ -356,6 +361,7 @@ class CategoryManagerDialog(QDialog):
                 text = f"💰 {category['name']} (₹{category['fee']:.0f})"
             
             item = QListWidgetItem(text)
+            item.setFont(item_font)
             item.setData(Qt.UserRole, category)
             self.category_list.addItem(item)
     
@@ -564,6 +570,10 @@ class FeeTrackerApp(QMainWindow):
         self._manual_selection_panel_open = False  # Track manual panel state
         self._updating_display = False  # Prevent concurrent updates
         
+        # File tracking for auto-save
+        self.current_csv_file = None  # Track currently loaded CSV
+        self.auto_save_file = None  # Track auto-save JSON file
+        
         self.init_ui()
     
     def load_categories(self):
@@ -608,10 +618,65 @@ class FeeTrackerApp(QMainWindow):
     def get_transaction_id(self, transaction):
         """Generate a unique ID for a transaction"""
         return f"{transaction['date']}_{transaction['name']}_{transaction['amount']}_{transaction['reference']}"
+    
+    def get_auto_save_path(self, csv_file_path):
+        """Generate path for auto-save JSON file"""
+        csv_path = Path(csv_file_path)
+        json_filename = csv_path.stem + '_edits.json'
+        return csv_path.parent / json_filename
+    
+    def auto_save_data(self):
+        """Auto-save current transactions to JSON file"""
+        if not self.auto_save_file or not self.transactions:
+            return
+        
+        try:
+            save_data = {
+                'csv_file': str(self.current_csv_file),
+                'saved_at': datetime.now().isoformat(),
+                'transactions': self.transactions,
+                'categories': self.categories
+            }
+            
+            with open(self.auto_save_file, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, indent=2, ensure_ascii=False)
+            
+            # Update status bar or label to show auto-saved
+            self.file_label.setStyleSheet(
+                "padding: 10px; background-color: #d4edda; border-radius: 5px; color: #155724;"
+            )
+            self.file_label.setText(f"File: {Path(self.current_csv_file).name} ✓ Auto-saved")
+            
+            # Reset color after 2 seconds
+            QTimer.singleShot(2000, lambda: self.file_label.setStyleSheet(
+                "padding: 10px; background-color: #f0f0f0; border-radius: 5px; color: #212121;"
+            ))
+            
+        except Exception as e:
+            print(f"Auto-save failed: {e}")
+    
+    def load_saved_data(self, csv_file_path):
+        """Load previously saved data if exists"""
+        json_path = self.get_auto_save_path(csv_file_path)
+        
+        if not json_path.exists():
+            return None
+        
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                saved_data = json.load(f)
+            
+            # Verify it's for the same CSV file
+            if saved_data.get('csv_file') == str(csv_file_path):
+                return saved_data
+            
+        except Exception as e:
+            print(f"Failed to load saved data: {e}")
+        
+        return None
         
     def init_ui(self):
         """Initialize the user interface"""
-    # Menu bar removed as per user request
         
         # Central widget
         central_widget = QWidget()
@@ -696,7 +761,7 @@ class FeeTrackerApp(QMainWindow):
         # Create dynamic summary labels based on categories
         self.category_labels = {}
         summary_font = QFont()
-        summary_font.setPointSize(11)
+        summary_font.setPointSize(14)  # Increased from 11 to 14
         summary_font.setBold(True)
         
         # Calculate how many items per row (let's do 4 per row for good spacing)
@@ -708,7 +773,7 @@ class FeeTrackerApp(QMainWindow):
             category_key = self.get_category_key(cat['name'], cat['fee'])
             label = QLabel(f"{cat['name']}: 0 entries (₹0)")
             label.setFont(summary_font)
-            label.setStyleSheet("padding: 10px; background-color: #e3f2fd; border-radius: 5px; color: #1a237e;")
+            label.setStyleSheet("padding: 12px; background-color: #e3f2fd; border-radius: 5px; color: #1a237e;")  # Increased padding
             self.category_labels[category_key] = label
             
             # Add to grid layout
@@ -875,6 +940,26 @@ class FeeTrackerApp(QMainWindow):
         self.edit_selected_btn.setEnabled(False)
         self.edit_selected_btn.clicked.connect(self.edit_selected_transactions)
         selection_layout.addWidget(self.edit_selected_btn)
+        
+        self.duplicate_selected_btn = QPushButton("📋 Duplicate Selected")
+        self.duplicate_selected_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                padding: 8px 15px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #7B1FA2;
+            }
+            QPushButton:disabled {
+                background-color: #BDBDBD;
+            }
+        """)
+        self.duplicate_selected_btn.setEnabled(False)
+        self.duplicate_selected_btn.clicked.connect(self.duplicate_selected_transactions)
+        selection_layout.addWidget(self.duplicate_selected_btn)
         
         self.delete_selected_btn = QPushButton("🗑️ Delete Selected")
         self.delete_selected_btn.setStyleSheet("""
@@ -1126,14 +1211,67 @@ class FeeTrackerApp(QMainWindow):
         
         if file_path:
             try:
-                self.process_csv(file_path)
+                loaded_from_save = self.process_csv(file_path)
                 self.file_label.setText(f"File: {Path(file_path).name}")
-                QMessageBox.information(self, "Success", "File processed successfully!")
+                # Don't show success message here if loaded from save (already shown in process_csv)
+                if not loaded_from_save:
+                    QMessageBox.information(self, "Success", f"File processed successfully!\nLoaded {len(self.transactions)} transactions.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to process file:\n{str(e)}")
     
     def process_csv(self, file_path):
-        """Process the CSV file and categorize transactions"""
+        """Process the CSV file and categorize transactions
+        Returns True if loaded from saved data, False if parsed from CSV"""
+        # Store current file path
+        self.current_csv_file = file_path
+        self.auto_save_file = self.get_auto_save_path(file_path)
+        
+        # Check if we have saved edits for this file
+        saved_data = self.load_saved_data(file_path)
+        
+        if saved_data:
+            # Ask user if they want to load saved edits
+            reply = QMessageBox.question(
+                self,
+                "Load Saved Edits?",
+                f"Found previously saved edits for this file.\n"
+                f"Last saved: {saved_data.get('saved_at', 'Unknown')}\n\n"
+                f"Would you like to load your saved edits?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                # Load saved transactions
+                self.transactions = saved_data['transactions']
+                
+                # Rebuild categorized_data
+                self.categorized_data = {}
+                for cat in self.categories:
+                    category_key = self.get_category_key(cat['name'], cat['fee'])
+                    self.categorized_data[category_key] = []
+                
+                # Re-categorize loaded transactions
+                for transaction in self.transactions:
+                    category = transaction['category']
+                    if category in self.categorized_data:
+                        self.categorized_data[category].append(transaction)
+                    else:
+                        # If category doesn't exist, add it (handles old saved data with deleted categories)
+                        self.categorized_data[category] = [transaction]
+                
+                # Update display with loaded data
+                self.update_display()
+                
+                # Show success message with count
+                QMessageBox.information(
+                    self,
+                    "Loaded Successfully",
+                    f"Loaded {len(self.transactions)} saved transactions from previous edits."
+                )
+                return True  # Indicate we loaded from saved data
+        
+        # No saved data or user chose not to load - parse CSV fresh
         self.transactions = []
         # Rebuild categorized_data dynamically from categories
         self.categorized_data = {}
@@ -1199,6 +1337,7 @@ class FeeTrackerApp(QMainWindow):
                     continue
         
         self.update_display()
+        return False  # Indicate we parsed from CSV
     
     def parse_csv_line(self, line):
         """Parse a CSV line handling the special format with = signs"""
@@ -1395,6 +1534,7 @@ class FeeTrackerApp(QMainWindow):
         text_colors = ['#1b5e20', '#0d47a1', '#e65100', '#880e4f', '#4a148c', '#f57f17']
         
         total_amount = 0
+        fees_only_amount = 0  # Total excluding donations
         
         # Update each category label dynamically
         for idx, (category_key, label) in enumerate(self.category_labels.items()):
@@ -1405,6 +1545,12 @@ class FeeTrackerApp(QMainWindow):
             # Get category name (without amount)
             cat_name = category_key.split(' (₹')[0] if '(₹' in category_key else category_key
             
+            # Add to fees total only if it's not a donation/uncategorised category
+            # Check if category has a fixed fee (not None)
+            category_obj = next((cat for cat in self.categories if self.get_category_key(cat['name'], cat['fee']) == category_key), None)
+            if category_obj and category_obj['fee'] is not None:
+                fees_only_amount += cat_total
+            
             label.setText(f"{cat_name}: {count} entries (₹{cat_total:.2f})")
             
             # Update colors based on whether there are entries
@@ -1412,11 +1558,11 @@ class FeeTrackerApp(QMainWindow):
             fg_color = text_colors[idx % len(text_colors)] if count > 0 else '#1a237e'
             
             label.setStyleSheet(
-                f"padding: 10px; background-color: {bg_color}; border-radius: 5px; color: {fg_color};"
+                f"padding: 12px; background-color: {bg_color}; border-radius: 5px; color: {fg_color};"
             )
         
-        # Update total
-        self.total_label.setText(f"Total: ₹{total_amount:.2f}")
+        # Update totals - show both fees and grand total
+        self.total_label.setText(f"Fee Collections: ₹{fees_only_amount:.2f}  |  Grand Total: ₹{total_amount:.2f}")
         self.total_label.setStyleSheet(
             "padding: 10px; background-color: #fff9c4; border-radius: 5px; border: 2px solid #fbc02d; color: #f57f17;"
         )
@@ -1656,6 +1802,7 @@ class FeeTrackerApp(QMainWindow):
         # Enable/disable action buttons based on selection
         has_selection = count > 0
         self.edit_selected_btn.setEnabled(has_selection)
+        self.duplicate_selected_btn.setEnabled(has_selection)
         self.delete_selected_btn.setEnabled(has_selection)
         
         # Select all button is hidden for now - no updates needed
@@ -1752,7 +1899,15 @@ class FeeTrackerApp(QMainWindow):
                     transaction['category'] = category
             
             # Refresh display
-            self.update_display()
+            # If search is active, re-run search to preserve filtered view
+            if self.search_input.text().strip():
+                self.perform_search()
+            else:
+                self.update_display()
+            
+            # Auto-save changes
+            self.auto_save_data()
+            
             QMessageBox.information(
                 self, 
                 "Success", 
@@ -1792,12 +1947,82 @@ class FeeTrackerApp(QMainWindow):
             
             # Clear selection and refresh display
             self.clear_selection()
-            self.update_display()
+            # If search is active, re-run search to preserve filtered view
+            if self.search_input.text().strip():
+                self.perform_search()
+            else:
+                self.update_display()
+            
+            # Auto-save changes
+            self.auto_save_data()
             
             QMessageBox.information(
                 self, 
                 "Deleted", 
                 f"Successfully deleted {len(selected)} transactions."
+            )
+    
+    def duplicate_selected_transactions(self):
+        """Duplicate selected transactions"""
+        selected = self.get_selected_transactions()
+        if not selected:
+            QMessageBox.information(self, "No Selection", "Please select transactions to duplicate.")
+            return
+        
+        # Track how many were duplicated
+        duplicated_count = 0
+        
+        for transaction in selected:
+            # Open edit dialog with duplicated transaction
+            # Make a copy of the transaction
+            duplicated_transaction = {
+                'date': transaction['date'],
+                'name': transaction['name'],
+                'short_name': transaction.get('short_name', transaction['name']),
+                'amount': transaction['amount'],
+                'category': transaction['category'],
+                'description': transaction['description'],
+                'reference': transaction['reference'] + '_COPY'  # Mark as copy
+            }
+            
+            # Get available categories for the dialog
+            categories = list(self.categorized_data.keys())
+            
+            # Open edit dialog
+            dialog = EditTransactionDialog(duplicated_transaction, categories, self)
+            
+            if dialog.exec() == QDialog.Accepted:
+                # Get the edited duplicate
+                new_transaction = dialog.get_updated_transaction()
+                
+                # Add to transactions list
+                self.transactions.append(new_transaction)
+                
+                # Add to appropriate category
+                category = new_transaction['category']
+                if category in self.categorized_data:
+                    self.categorized_data[category].append(new_transaction)
+                
+                duplicated_count += 1
+        
+        if duplicated_count > 0:
+            # Clear selection
+            self.selected_transactions.clear()
+            
+            # Refresh display
+            # If search is active, re-run search to preserve filtered view
+            if self.search_input.text().strip():
+                self.perform_search()
+            else:
+                self.update_display()
+            
+            # Auto-save changes
+            self.auto_save_data()
+            
+            QMessageBox.information(
+                self, 
+                "Success", 
+                f"Successfully duplicated {duplicated_count} transaction(s)."
             )
 
     def set_search_delay(self, delay_ms):
@@ -1863,7 +2088,14 @@ class FeeTrackerApp(QMainWindow):
                 self.categorized_data[new_category].append(transaction)
             
             # Refresh display to show changes
-            self.update_display()
+            # If search is active, re-run search to preserve filtered view
+            if self.search_input.text().strip():
+                self.perform_search()
+            else:
+                self.update_display()
+            
+            # Auto-save changes
+            self.auto_save_data()
             
             # Show confirmation message
             QMessageBox.information(
@@ -1896,49 +2128,271 @@ class FeeTrackerApp(QMainWindow):
             
             # Refresh display
             self.update_display()
+            
+            # Auto-save changes
+            self.auto_save_data()
     
     def export_summary(self):
-        """Export summary to a text file"""
+        """Export summary to an Excel file with formatting"""
         if not self.transactions:
             QMessageBox.warning(self, "No Data", "Please upload a CSV file first.")
             return
         
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export Summary",
-            str(Path.home() / "fee_summary.txt"),
-            "Text Files (*.txt);;All Files (*)"
+            "Export Summary to Excel",
+            str(Path.home() / f"fee_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"),
+            "Excel Files (*.xlsx);;All Files (*)"
         )
         
         if file_path:
             try:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write("=" * 80 + "\n")
-                    f.write("MUSIC CLASS FEE TRACKER - SUMMARY REPORT\n")
-                    f.write("=" * 80 + "\n\n")
-                    
-                    # Export all categories dynamically
-                    for category_key in self.categorized_data.keys():
-                        transactions = self.categorized_data[category_key]
-                        total = sum(t['amount'] for t in transactions)
-                        
-                        f.write(f"\n{category_key}\n")
-                        f.write("-" * 80 + "\n")
-                        f.write(f"Total: {len(transactions)} entries | Amount: ₹{total:.2f}\n\n")
-                        
-                        for t in transactions:
-                            f.write(f"  • {t['name']:<25} | ₹{t['amount']:>8.2f} | {t['date']}\n")
-                        
-                        f.write("\n")
-                    
-                    total_amount = sum(t['amount'] for t in self.transactions)
-                    f.write("=" * 80 + "\n")
-                    f.write(f"GRAND TOTAL: ₹{total_amount:.2f}\n")
-                    f.write("=" * 80 + "\n")
+                from openpyxl import Workbook
+                from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+                from openpyxl.utils import get_column_letter
                 
-                QMessageBox.information(self, "Success", f"Summary exported to:\n{file_path}")
+                # Create workbook
+                wb = Workbook()
+                
+                # === Summary Sheet ===
+                ws_summary = wb.active
+                ws_summary.title = "Summary"
+                
+                # Title
+                ws_summary['A1'] = "MUSIC CLASS FEE TRACKER - SUMMARY REPORT"
+                ws_summary['A1'].font = Font(size=16, bold=True, color="FFFFFF")
+                ws_summary['A1'].fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                ws_summary['A1'].alignment = Alignment(horizontal="center", vertical="center")
+                ws_summary.merge_cells('A1:E1')
+                ws_summary.row_dimensions[1].height = 30
+                
+                # Date
+                ws_summary['A2'] = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                ws_summary['A2'].font = Font(italic=True)
+                ws_summary.merge_cells('A2:E2')
+                
+                # Headers
+                row = 4
+                headers = ['Category', 'Number of Entries', 'Total Amount (₹)', 'Average Amount (₹)', '% of Total']
+                for col, header in enumerate(headers, 1):
+                    cell = ws_summary.cell(row=row, column=col, value=header)
+                    cell.font = Font(bold=True, color="FFFFFF")
+                    cell.fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.border = Border(
+                        left=Side(style='thin'),
+                        right=Side(style='thin'),
+                        top=Side(style='thin'),
+                        bottom=Side(style='thin')
+                    )
+                
+                # Calculate grand total for percentages
+                grand_total = sum(t['amount'] for t in self.transactions)
+                
+                # Data rows
+                row = 5
+                color_palette = ['D9E1F2', 'E2EFDA', 'FCE4D6', 'F4B084', 'C5E0B4', 'FFE699']
+                
+                for idx, category_key in enumerate(self.categorized_data.keys()):
+                    transactions = self.categorized_data[category_key]
+                    total = sum(t['amount'] for t in transactions)
+                    count = len(transactions)
+                    avg = total / count if count > 0 else 0
+                    percentage = (total / grand_total) if grand_total > 0 else 0  # Store as decimal (0.2836), not percentage (28.36)
+                    
+                    # Category name (without amount suffix)
+                    category_name = category_key.split(' (₹')[0] if '(₹' in category_key else category_key
+                    
+                    ws_summary.cell(row=row, column=1, value=category_name)
+                    ws_summary.cell(row=row, column=2, value=count)
+                    ws_summary.cell(row=row, column=3, value=total).number_format = '₹#,##0.00'
+                    ws_summary.cell(row=row, column=4, value=avg).number_format = '₹#,##0.00'
+                    ws_summary.cell(row=row, column=5, value=percentage).number_format = '0.00%'  # This format multiplies by 100
+                    
+                    # Apply color fill
+                    fill_color = color_palette[idx % len(color_palette)]
+                    for col in range(1, 6):
+                        cell = ws_summary.cell(row=row, column=col)
+                        cell.fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
+                        cell.border = Border(
+                            left=Side(style='thin'),
+                            right=Side(style='thin'),
+                            top=Side(style='thin'),
+                            bottom=Side(style='thin')
+                        )
+                        if col > 1:
+                            cell.alignment = Alignment(horizontal="right")
+                    
+                    row += 1
+                
+                # Grand Total Row
+                ws_summary.cell(row=row, column=1, value="GRAND TOTAL")
+                ws_summary.cell(row=row, column=1).font = Font(bold=True)
+                ws_summary.cell(row=row, column=2, value=len(self.transactions))
+                ws_summary.cell(row=row, column=3, value=grand_total).number_format = '₹#,##0.00'
+                
+                for col in range(1, 6):
+                    cell = ws_summary.cell(row=row, column=col)
+                    cell.font = Font(bold=True)
+                    cell.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+                    cell.border = Border(
+                        left=Side(style='medium'),
+                        right=Side(style='medium'),
+                        top=Side(style='medium'),
+                        bottom=Side(style='medium')
+                    )
+                    if col > 1:
+                        cell.alignment = Alignment(horizontal="right")
+                
+                # Adjust column widths
+                ws_summary.column_dimensions['A'].width = 30
+                ws_summary.column_dimensions['B'].width = 18
+                ws_summary.column_dimensions['C'].width = 18
+                ws_summary.column_dimensions['D'].width = 20
+                ws_summary.column_dimensions['E'].width = 15
+                
+                # === Detailed Transactions Sheet ===
+                ws_detail = wb.create_sheet("All Transactions")
+                
+                # Headers
+                detail_headers = ['Date', 'Name', 'Amount (₹)', 'Category', 'Description', 'Reference']
+                for col, header in enumerate(detail_headers, 1):
+                    cell = ws_detail.cell(row=1, column=col, value=header)
+                    cell.font = Font(bold=True, color="FFFFFF")
+                    cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.border = Border(
+                        left=Side(style='thin'),
+                        right=Side(style='thin'),
+                        top=Side(style='thin'),
+                        bottom=Side(style='thin')
+                    )
+                
+                # Data rows
+                row = 2
+                for transaction in self.transactions:
+                    ws_detail.cell(row=row, column=1, value=transaction['date'])
+                    ws_detail.cell(row=row, column=2, value=transaction['name'])
+                    ws_detail.cell(row=row, column=3, value=transaction['amount']).number_format = '₹#,##0.00'
+                    
+                    # Category name without amount
+                    category_name = transaction['category'].split(' (₹')[0] if '(₹' in transaction['category'] else transaction['category']
+                    ws_detail.cell(row=row, column=4, value=category_name)
+                    ws_detail.cell(row=row, column=5, value=transaction['description'])
+                    ws_detail.cell(row=row, column=6, value=transaction['reference'])
+                    
+                    # Apply borders and alignment
+                    for col in range(1, 7):
+                        cell = ws_detail.cell(row=row, column=col)
+                        cell.border = Border(
+                            left=Side(style='thin'),
+                            right=Side(style='thin'),
+                            top=Side(style='thin'),
+                            bottom=Side(style='thin')
+                        )
+                        if col == 3:  # Amount column
+                            cell.alignment = Alignment(horizontal="right")
+                    
+                    row += 1
+                
+                # Adjust column widths
+                ws_detail.column_dimensions['A'].width = 15
+                ws_detail.column_dimensions['B'].width = 25
+                ws_detail.column_dimensions['C'].width = 15
+                ws_detail.column_dimensions['D'].width = 20
+                ws_detail.column_dimensions['E'].width = 40
+                ws_detail.column_dimensions['F'].width = 20
+                
+                # === Category-wise Sheets ===
+                for category_key in self.categorized_data.keys():
+                    transactions = self.categorized_data[category_key]
+                    if not transactions:
+                        continue
+                    
+                    # Create sheet name (max 31 chars, no special chars)
+                    category_name = category_key.split(' (₹')[0] if '(₹' in category_key else category_key
+                    sheet_name = category_name[:31].replace('/', '-').replace('\\', '-').replace('?', '').replace('*', '').replace('[', '').replace(']', '')
+                    
+                    ws_cat = wb.create_sheet(sheet_name)
+                    
+                    # Title
+                    ws_cat['A1'] = f"{category_name} - Detailed Report"
+                    ws_cat['A1'].font = Font(size=14, bold=True, color="FFFFFF")
+                    ws_cat['A1'].fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+                    ws_cat['A1'].alignment = Alignment(horizontal="center", vertical="center")
+                    ws_cat.merge_cells('A1:F1')
+                    ws_cat.row_dimensions[1].height = 25
+                    
+                    # Headers
+                    for col, header in enumerate(detail_headers, 1):
+                        cell = ws_cat.cell(row=3, column=col, value=header)
+                        cell.font = Font(bold=True, color="FFFFFF")
+                        cell.fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")
+                        cell.alignment = Alignment(horizontal="center")
+                        cell.border = Border(
+                            left=Side(style='thin'),
+                            right=Side(style='thin'),
+                            top=Side(style='thin'),
+                            bottom=Side(style='thin')
+                        )
+                    
+                    # Data
+                    row = 4
+                    for transaction in transactions:
+                        ws_cat.cell(row=row, column=1, value=transaction['date'])
+                        ws_cat.cell(row=row, column=2, value=transaction['name'])
+                        ws_cat.cell(row=row, column=3, value=transaction['amount']).number_format = '₹#,##0.00'
+                        ws_cat.cell(row=row, column=4, value=category_name)
+                        ws_cat.cell(row=row, column=5, value=transaction['description'])
+                        ws_cat.cell(row=row, column=6, value=transaction['reference'])
+                        
+                        for col in range(1, 7):
+                            cell = ws_cat.cell(row=row, column=col)
+                            cell.border = Border(
+                                left=Side(style='thin'),
+                                right=Side(style='thin'),
+                                top=Side(style='thin'),
+                                bottom=Side(style='thin')
+                            )
+                            if col == 3:
+                                cell.alignment = Alignment(horizontal="right")
+                        
+                        row += 1
+                    
+                    # Total row
+                    total = sum(t['amount'] for t in transactions)
+                    ws_cat.cell(row=row, column=2, value="TOTAL:")
+                    ws_cat.cell(row=row, column=2).font = Font(bold=True)
+                    ws_cat.cell(row=row, column=3, value=total).number_format = '₹#,##0.00'
+                    ws_cat.cell(row=row, column=3).font = Font(bold=True)
+                    ws_cat.cell(row=row, column=2).fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+                    ws_cat.cell(row=row, column=3).fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+                    
+                    # Adjust column widths
+                    ws_cat.column_dimensions['A'].width = 15
+                    ws_cat.column_dimensions['B'].width = 25
+                    ws_cat.column_dimensions['C'].width = 15
+                    ws_cat.column_dimensions['D'].width = 20
+                    ws_cat.column_dimensions['E'].width = 40
+                    ws_cat.column_dimensions['F'].width = 20
+                
+                # Save workbook
+                wb.save(file_path)
+                
+                QMessageBox.information(
+                    self, 
+                    "Success", 
+                    f"Excel summary exported successfully!\n\n"
+                    f"File: {Path(file_path).name}\n"
+                    f"Location: {Path(file_path).parent}\n\n"
+                    f"Sheets included:\n"
+                    f"• Summary (overview)\n"
+                    f"• All Transactions (complete list)\n"
+                    f"• Individual category sheets"
+                )
+                
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to export summary:\n{str(e)}")
+                QMessageBox.critical(self, "Error", f"Failed to export Excel summary:\n{str(e)}")
 
 
 def main():
