@@ -4,39 +4,60 @@ A Python GUI application built with PySide6 to automate fee calculation and cate
 
 ## Features
 
-s✨ **Dynamic Category Management**
-- Add, edit, and delete categories with custom fees
-- Categories automatically saved and persist across sessions
+### 🎯 Core Features
+
+✨ **Dynamic Category Management**
+- Add, edit, and delete categories with custom fees through GUI
+- Categories automatically saved to `fee_categories.json` and persist across sessions
 - Support for both fixed-fee and variable-amount categories
 - Automatic recategorization when categories change
+- Duplicate detection for category names and fee amounts
+- Real-time validation and error handling
 
-✏️ **Edit & Delete Transactions**
-- Edit button for each transaction row
-- Modify amounts and categories on the fly
-- Delete unwanted transactions with confirmation
-- Automatic recalculation of totals after changes
+👥 **Student Name Management**
+- Complete CRUD operations for student mappings
+- **Add Students**: One-by-one through dialog or bulk import via CSV/Excel
+- **Search Students**: Real-time filtering by short name or full name
+- **Edit Students**: Modify both short names and full names with duplicate checking
+- **Delete Students**: Remove students with confirmation dialog
+- **Import/Export**: CSV and Excel support for bulk operations
+- **Fuzzy Matching**: 4-strategy name matching (exact, case-insensitive, space-removed, combined)
+- Student mappings stored in `student_name_mappings.json`
+- Auto-creates template file on fresh install with examples
+- Sample CSV template included for easy bulk imports
 
-📊 **Visual Display**
-- Color-coded categorization in table view
-- Dynamic summary statistics with counts and totals
-- Easy-to-read tabular format
-- Full student names displayed (mapped from short names)
-- Automatically adapts to any number of categories
+✏️ **Transaction Management**
+- **Edit Transactions**: Modify date, name, amount, and category for any transaction
+- **Delete Transactions**: Remove unwanted transactions with confirmation
+- **Duplicate Transactions**: Create copies for recurring payments
+- **Bulk Operations**: Select multiple transactions for batch editing or deletion
+- **Auto-save**: Changes automatically saved to JSON file for persistence
+- **Re-process**: Automatically recategorize all transactions after student list updates
 
-🔍 **Search Functionality**
-- Collapsible search panel
-- Search by: Name, Amount, Category, or Description
-- Real-time filtering with result counts
+📊 **Advanced Search & Display**
+- **Collapsible Search Panel**: Toggle on/off to save screen space
+- **Multi-field Search**: Search by Name, Amount, Category, Description, or All fields
+- **Real-time Filtering**: Instant results with debouncing (150ms) for performance
+- **Result Counter**: Shows number of matching transactions
+- **Color-coded Display**: Category-based color coding in table view
+- **Checkbox Selection**: Select individual transactions for bulk operations
+- **Sortable Columns**: Click headers to sort by any column
 
-👤 **Student Name Mapping**
-- Automatic conversion of short names to full names
-- Customizable mapping in `student_mappings.py`
-- Easy to update and maintain
+💾 **Import/Export Capabilities**
+- **CSV Import**: Upload bank statements from CSV files
+- **Excel Import**: Support for .xls and .xlsx bank statements
+- **Student Import**: Bulk import student names from CSV/Excel
+- **Student Export**: Export student list to Excel with formatting
+- **Summary Export**: Detailed reports organized by category
+- **Auto-save State**: Transaction edits automatically saved and restored
 
-💾 **Export Functionality**
-- Export detailed summary reports to text files
-- Organized by category with student names and amounts
-- Dynamic export adapts to your categories
+🎨 **User Interface**
+- **Modern Design**: Clean, professional interface with Qt6 styling
+- **Collapsible Panels**: Search and Selection tools can be hidden
+- **Responsive Layout**: Adapts to different screen sizes
+- **Visual Feedback**: Success/error messages, loading indicators, auto-save notifications
+- **Keyboard Shortcuts**: Quick access to common operations
+- **Alternating Row Colors**: Better readability in tables
 
 ## Installation
 
@@ -49,6 +70,10 @@ s✨ **Dynamic Category Management**
    Make sure Python 3.7+ is installed on your system.
 
 ### Installing Dependencies
+
+The application requires:
+- **PySide6** (>=6.6.0) - Qt6 framework for Python
+- **OpenPyXL** (>=3.1.0) - Excel file support (.xlsx)
 
 #### Method 1: Using Virtual Environment (Recommended)
 
@@ -96,9 +121,9 @@ If you don't encounter the externally-managed-environment error:
 pip install -r requirements.txt
 ```
 
-Or install PySide6 directly:
+Or install packages individually:
 ```bash
-pip install PySide6
+pip install PySide6 openpyxl
 ```
 
 #### Method 3: Alternative Solutions
@@ -137,192 +162,459 @@ brew install python-tk  # If available
 
 ## Usage
 
+### Quick Start
+
 1. **Run the application:**
-```bash
-python fee_tracker.py
-```
-
-2. **Manage Categories (New!):**
-   - Click "⚙️ Manage Categories" to open the category manager
-   - **Add Category**: Click "➕ Add Category", enter name and fee amount
-   - **Edit Category**: Select a category, click "✏️ Edit Category"
-   - **Delete Category**: Select a category, click "🗑️ Delete Category"
-   - Categories are automatically saved and persist across sessions
-   - Enter 0 for fee to create a variable-amount category (like Donations)
-
-3. **Upload CSV file:**
-   - Click the "📁 Upload CSV File" button
-   - Select your bank statement CSV file
-   - The application will automatically process and categorize all transactions
-   - Transactions are categorized based on matching fee amounts
-
-4. **View Results:**
-   - All transactions are displayed in the table with color-coded categories
-   - Summary section shows counts and totals for each category
-   - Scroll through the table to see all entries
-   - Summary dynamically updates based on your categories
-
-5. **Edit or Delete Transactions:**
-   - Click "✏️ Edit" on any row to modify amount or category
-   - Click "🗑️ Delete" to remove a transaction (with confirmation)
-   - Totals automatically recalculate after changes
-
-6. **Search Transactions:**
-   - Click "🔍 Show Search" to expand the search panel
-   - Select search field (All, Name, Amount, Category, or Description)
-   - Type to filter results in real-time
-   - Click "✕ Clear" to reset
-
-7. **Export Summary:**
-   - Click "💾 Export Summary" to save a detailed report
-   - Choose location and filename
-   - Report includes all entries organized by category
-
-## Category Management
-
-The application now supports dynamic category management, making it fully scalable for any number of classes or fee structures.
-
-### How Categories Work:
-
-1. **Fixed-Fee Categories**: Enter a specific amount (e.g., ₹502)
-   - Transactions matching this exact amount are automatically categorized
-
-2. **Variable-Amount Categories**: Enter 0 as the fee
-   - Acts as a catch-all for amounts that don't match any fixed fee
-   - Perfect for donations or miscellaneous payments
-
-3. **Category Files**: Categories are stored in `categories.json`
-   - Automatically created on first run with default categories
-   - Persists across application restarts
-   - Can be manually edited if needed
-
-### Default Categories:
-- Namasankeerthanam: ₹502
-- Shloka Class: ₹503
-- Rishabhaa Class: ₹750
-- Donations: Variable amount
-
-## Student Name Mapping
-
-The application automatically converts short names from bank statements to full student names using the `student_mappings.py` file.
-
-### Editing Student Names:
-
-1. **Open the mapping file:**
    ```bash
-   # Edit with any text editor
-   open student_mappings.py
+   python3 fee_tracker.py
    ```
 
-2. **Update the dictionary:**
-   ```python
-   STUDENT_NAME_MAPPINGS = {
-       "MEENAKSHI": "Meenakshi Sundaram",  # Short name: Full name
-       "Mrs V N J": "Mrs V N Jayalakshmi",
-       # Add or edit entries here
-   }
-   ```
+2. **First-Time Setup:**
+   - On first run, the app creates `fee_categories.json` and `student_name_mappings.json`
+   - Default categories are created automatically
+   - Student mappings file includes examples and instructions
 
-3. **Save and restart the application**
+### Managing Categories
 
-The application will automatically use the updated names when processing CSV files.
+Click **"⚙️ Manage Categories"** to open the category manager:
 
-## CSV Format
+- **Add Category**: 
+  - Click "➕ Add Category"
+  - Enter category name (e.g., "Piano Lessons")
+  - Enter fee amount (e.g., 500) or 0 for variable amount
+  - Click "Add" to save
+  
+- **Edit Category**: 
+  - Select a category from the list
+  - Modify name or fee amount
+  - Click "✏️ Update Category"
+  
+- **Delete Category**: 
+  - Select a category from the list
+  - Click "🗑️ Delete Category"
+  - Confirm deletion
 
-The application is designed to work with Canara Bank CSV statements with the following format:
-- Transaction Date
-- Value Date
+**Notes:**
+- Each category must have a unique fee amount (for auto-categorization)
+- Only one variable-amount category allowed
+- Changes persist across sessions
+- Transactions automatically recategorize when categories change
+
+### Managing Students
+
+Click **"👥 Manage Students"** to open the student manager:
+
+- **Add Student (One-by-one)**:
+  - Click "➕ Add Student"
+  - Enter short name (as it appears in bank statements, e.g., "JOHN D")
+  - Enter full student name (e.g., "John Doe")
+  - Click "Save"
+
+- **Import Students (Bulk)**:
+  - **From CSV**: Click "📁 Import from CSV"
+    - Select CSV file with two columns: Short Name, Full Student Name
+    - Use `sample_student_names.csv` as a template
+  - **From Excel**: Click "📊 Import from Excel"
+    - Select .xlsx or .xls file with same format
+  
+- **Search Students**:
+  - Type in the search box to filter by short name or full name
+  - Click "✕ Clear" to reset search
+
+- **Edit Student**:
+  - Click "✏️ Edit" button next to student name
+  - Modify short name or full name
+  - Click "Save"
+
+- **Delete Student**:
+  - Click "🗑️ Delete" button next to student name
+  - Confirm deletion
+
+- **Export Students**:
+  - Click "💾 Export to Excel"
+  - Choose save location
+  - Creates formatted Excel file with all student mappings
+
+**Notes:**
+- Changes saved to `student_name_mappings.json`
+- App asks if you want to re-process transactions after updating students
+- Duplicate short names prevented
+- Inline editing also available (click cell and type)
+
+### Processing Transactions
+
+1. **Upload Bank Statement:**
+   - Click "📁 Upload CSV File"
+   - Select your bank statement CSV file
+   - Supports both CSV and Excel formats (.xls, .xlsx)
+   
+2. **Auto-Categorization:**
+   - Transactions automatically categorized by matching fee amounts
+   - Student names extracted from UPI descriptions
+   - Short names matched to full names using fuzzy logic
+   - Unmatched amounts go to variable-amount category
+
+3. **View Results:**
+   - All transactions displayed in color-coded table
+   - Summary shows counts and totals for each category
+   - Scroll through table to see all entries
+
+### Editing Transactions
+
+- **Single Edit**:
+  - Click any cell to edit inline (except checkbox and action buttons)
+  - OR click "✏️ Edit" button for dialog-based editing
+  - Modify date, name, amount, or category
+  - Changes auto-save
+
+- **Bulk Operations**:
+  - Click "✅ Show Selection Tools" to reveal selection panel
+  - Check boxes next to transactions to select
+  - Use bulk buttons:
+    - **✏️ Edit Selected**: Change category for all selected
+    - **📋 Duplicate Selected**: Create copies of selected transactions
+    - **🗑️ Delete Selected**: Remove multiple transactions at once
+  - Click "☐ Clear Selection" to deselect all
+
+### Searching Transactions
+
+1. Click **"🔍 Show Search"** to expand search panel
+2. Select search field:
+   - **All**: Search across all fields
+   - **Name**: Search by student name
+   - **Amount**: Search by transaction amount
+   - **Category**: Filter by category
+   - **Description**: Search in transaction descriptions
+3. Type to filter results in real-time
+4. Result count shows number of matching transactions
+5. Click **"✕ Clear"** to reset search
+
+### Exporting Data
+
+- **Export Summary**:
+  - Click "💾 Export Summary"
+  - Choose save location and filename
+  - Creates text file with transactions organized by category
+  - Includes student names and amounts
+
+- **Export Students**:
+  - Open Student Manager ("👥 Manage Students")
+  - Click "💾 Export to Excel"
+  - Creates formatted Excel file with all student mappings
+
+## Configuration Files
+
+The application uses JSON files for configuration and data storage:
+
+### `fee_categories.json`
+Stores all fee categories with their amounts:
+```json
+{
+  "categories": [
+    {"name": "Piano Lessons", "fee": 500},
+    {"name": "Vocal Class", "fee": 600},
+    {"name": "Donations", "fee": null}
+  ]
+}
+```
+- **Auto-created** on first run with default categories
+- `fee: null` or `fee: 0` indicates variable-amount category
+- Edit through GUI or manually edit JSON file
+
+### `student_name_mappings.json`
+Maps short names from bank statements to full student names:
+```json
+{
+  "mappings": {
+    "JOHN D": "John Doe",
+    "MARY S": "Mary Smith"
+  },
+  "_comment": "Student name mappings for the Music Class Fee Tracker",
+  "_instructions": "Add student mappings in the format: 'SHORTNAME': 'Full Student Name'"
+}
+```
+- **Auto-created** on first run with template and examples
+- Edit through Student Manager GUI or manually
+- Supports fuzzy matching (case-insensitive, space-removed)
+
+### Transaction Auto-save
+Edits to transactions are automatically saved to:
+- `{original_filename}_edits.json`
+- Restores your edits when reopening the same CSV file
+- Includes transaction data and timestamps
+
+## Student Name Mapping System
+
+The application features an intelligent fuzzy-matching system for student names:
+
+### Matching Strategies (in order):
+1. **Exact Match**: Direct lookup (fastest)
+2. **Case-Insensitive**: "john d" matches "JOHN D"
+3. **Space-Removed**: "JOHND" matches "JOHN D"
+4. **Combined**: "johnd" matches "JOHN D" (case-insensitive + space-removed)
+
+### Example:
+Bank statement shows: "SUNDARA P" or "SUNDARAP" or "sundara p"  
+All map to: "Dhanalakshmi" (if configured in mappings)
+
+### Fallback Behavior:
+If no mapping found, displays formatted short name (e.g., "John D" instead of "JOHND")
+
+### Managing Mappings:
+
+**Through GUI (Recommended):**
+- Use Student Manager dialog ("👥 Manage Students" button)
+- Add, edit, delete students with visual interface
+- Import/export bulk data via CSV or Excel
+- Search and filter capabilities
+
+**Manual Editing:**
+- Edit `student_name_mappings.json` directly
+- Restart application to reload changes
+- Useful for advanced users or bulk edits
+
+**Bulk Import:**
+- Use provided `sample_student_names.csv` as template
+- Two columns: Short Name, Full Student Name
+- Import via Student Manager dialog
+
+## CSV/Excel Format Support
+
+The application supports multiple bank statement formats:
+
+### Supported File Types:
+- **CSV files** (.csv) - Most common format
+- **Excel files** (.xlsx, .xls) - Direct Excel support
+
+### Expected Format:
+The application is designed for Canara Bank CSV statements but can work with similar formats containing:
+- Transaction Date / Txn Date
+- Value Date (optional)
 - Cheque/Reference Number
 - Description (containing UPI details with student names)
-- Branch Code
+- Branch Code (optional)
 - Debit
 - Credit (amount)
 - Balance
 
-The application automatically:
-- Extracts student names from UPI descriptions
-- Maps short names to full student names
+### Flexible Column Headers:
+- Supports variations like "Txn Date" or "Transaction Date"
+- Handles different bank statement formats
+- Custom CSV parser manages quoted fields and special characters
+
+### Automatic Processing:
+- Extracts student names from UPI transaction descriptions
 - Identifies credit amounts
-- Categorizes based on the fee amount
-- Displays organized results with full names
+- Categorizes based on fee amount
+- Maps short names to full student names
+- Handles special CSV formatting (escaped quotes, etc.)
 
-## Class Categories
+## Performance & Technical Details
 
-| Class | Fee Amount | Color |
-|-------|------------|-------|
-| Namasankeerthanam | ₹502 | 🟢 Light Green |
-| Shloka Class | ₹503 | 🔵 Light Blue |
-| Rishabhaa Class | ₹750 | 🟠 Light Orange |
-| Donations | Other amounts | 🔴 Light Pink |
+### Performance Optimizations:
+- **Search Debouncing**: 150ms delay for smooth real-time filtering
+- **Color Caching**: Category colors cached for faster rendering
+- **Efficient Rendering**: 60 FPS table updates
+- **Smart Updates**: Only affected rows updated on changes
+- **Background Processing**: Non-blocking UI during file operations
 
-## Screenshots
+### Technical Stack:
+- **Language**: Python 3.7+
+- **Framework**: PySide6 6.6.0+ (Qt6 for Python)
+- **Excel Support**: OpenPyXL 3.1.0+
+- **Architecture**: MVC-inspired with event-driven design
+- **Data Storage**: JSON files for configuration and persistence
+- **CSV Parsing**: Custom state-machine parser for robust handling
 
-### Main Window
-The main window displays:
-- File upload button at the top
-- Summary statistics showing count and totals for each batch
-- Detailed table with all transactions color-coded by category
-- Export button to save summaries
+### Code Statistics:
+- **Total Lines**: 2,600+ lines of Python code
+- **Main Application**: `fee_tracker.py` (2,857 lines)
+- **Student Module**: `student_mappings.py` (168 lines)
+- **Classes**: 4 main dialog classes
+- **Methods**: 50+ methods across all classes
 
-### Features
-- **Sortable columns**: Click column headers to sort
-- **Alternating row colors**: For better readability
-- **Responsive layout**: Adjusts to window size
-- **Error handling**: Clear messages for any issues
+### Key Components:
+1. **FeeTrackerApp**: Main application window
+2. **CategoryManagerDialog**: Category CRUD operations
+3. **StudentManagerDialog**: Student name management
+4. **EditTransactionDialog**: Transaction editing interface
+
+### Data Files:
+- `fee_categories.json` - Category definitions
+- `student_name_mappings.json` - Student name mappings
+- `{filename}_edits.json` - Auto-saved transaction edits
+- `sample_student_names.csv` - Import template
 
 ## Troubleshooting
 
-**Issue**: Application won't start
-- **Solution**: Ensure PySide6 is installed: `pip install PySide6`
+### Installation Issues
 
-**Issue**: CSV file won't load
-- **Solution**: Make sure the CSV file is in the correct format (Canara Bank statement)
+**Issue**: `error: externally-managed-environment`  
+**Solution**: Use virtual environment (see Installation Method 1)
 
-**Issue**: Names not showing correctly
-- **Solution**: Edit the `student_mappings.py` file to add or update name mappings
+**Issue**: `python: command not found`  
+**Solution**: Use `python3` instead of `python` on macOS/Linux
 
-**Issue**: Wrong full name displayed
-- **Solution**: Find the short name in `student_mappings.py` and update the corresponding full name
+**Issue**: `pip: command not found`  
+**Solution**: Use `pip3` or install pip: `python3 -m ensurepip --upgrade`
 
-## Technical Details
+**Issue**: `No module named 'openpyxl'`  
+**Solution**: Install OpenPyXL: `pip install openpyxl`
 
-- **Framework**: PySide6 (Qt for Python)
-- **Language**: Python 3.7+
-- **CSV Parsing**: Custom parser to handle Canara Bank's special CSV format (with `=""` escaping and quoted fields)
-- **Name Mapping**: Automatic lookup system for converting short names to full names
-- **GUI**: Modern, user-friendly interface with color coding and collapsible search
+**Issue**: Permission denied errors  
+**Solution**: Never use `sudo` with pip. Use virtual environment or `--user` flag
 
-## Customization
+### Application Issues
 
-### Fee Amounts
-To modify fee amounts, edit these constants in `fee_tracker.py`:
+**Issue**: Application won't start  
+**Solutions**:
+- Ensure PySide6 is installed: `pip install PySide6`
+- Check Python version: `python3 --version` (requires 3.7+)
+- Activate virtual environment if using one
 
-```python
-BATCH_A_FEE = 502  # Namasankeerthanam fee
-BATCH_B_FEE = 503  # Shloka Class fee
-BATCH_C_FEE = 750  # Rishabhaa Class fee
+**Issue**: CSV/Excel file won't load  
+**Solutions**:
+- Verify file format matches expected structure
+- Check file isn't corrupted or password-protected
+- Try saving Excel file as CSV and importing
+- Check console output for specific error messages
+
+**Issue**: Student names not showing correctly  
+**Solutions**:
+- Open Student Manager and verify mappings exist
+- Check short name matches exactly (spaces, case)
+- Use fuzzy matching by trying variations
+- Add missing student through Student Manager
+
+**Issue**: Categories not saving  
+**Solutions**:
+- Check file permissions in application directory
+- Verify `fee_categories.json` isn't read-only
+- Try manually creating the file with empty categories
+- Check console for write permission errors
+
+**Issue**: Transactions not auto-saving  
+**Solutions**:
+- Ensure you've loaded a CSV file first
+- Check write permissions in the file's directory
+- Look for `{filename}_edits.json` file
+- Verify disk space is available
+
+**Issue**: Wrong categorization  
+**Solutions**:
+- Check category fee amounts match transaction amounts exactly
+- Verify you have a variable-amount category for unmatched amounts
+- Review Category Manager for duplicate fee amounts
+- Edit transactions manually if auto-categorization fails
+
+### Data Issues
+
+**Issue**: Lost student mappings after update  
+**Solution**: Check `student_name_mappings.json` file exists and isn't empty
+
+**Issue**: Duplicate students in list  
+**Solution**: Use Student Manager to search and delete duplicates
+
+**Issue**: Import fails silently  
+**Solutions**:
+- Check CSV/Excel file has exactly 2 columns
+- Verify no merged cells in Excel files
+- Ensure data starts from row 1 or has proper headers
+- Check for special characters in names
+
+### Getting Help
+
+If issues persist:
+1. Check the console output for error messages
+2. Verify all dependencies are installed: `pip list | grep -i "pyside6\|openpyxl"`
+3. Try with a fresh virtual environment
+4. Review configuration JSON files for syntax errors
+5. Test with the sample CSV file provided
+
+## Building macOS Application
+
+The project includes scripts to build a standalone macOS application:
+
+### Prerequisites:
+```bash
+pip install pyinstaller
 ```
 
-### Student Names
-To add or update student names, edit `student_mappings.py`:
+### Build Steps:
 
-```python
-BATCH_A_FEE = 502  # Change to your Batch A fee
-BATCH_B_FEE = 503  # Change to your Batch B fee
-BATCH_C_FEE = 750  # Change to your Batch C fee
+1. **Build the application:**
+   ```bash
+   chmod +x build_app.sh
+   ./build_app.sh
+   ```
+
+2. **Create DMG installer (optional):**
+   ```bash
+   chmod +x create_dmg.sh
+   ./create_dmg.sh
+   ```
+
+### Output:
+- **Application**: `dist/FeeTracker.app`
+- **DMG Installer**: `FeeTracker.dmg` (if created)
+
+### Distribution:
+The standalone app can be distributed to other macOS users without requiring Python installation.
+
+## File Structure
+
 ```
+fee-automate/
+├── fee_tracker.py              # Main application
+├── student_mappings.py         # Student name mapping logic
+├── fee_categories.json         # Category definitions (auto-generated)
+├── student_name_mappings.json  # Student mappings (auto-generated)
+├── sample_student_names.csv    # Import template
+├── requirements.txt            # Python dependencies
+├── fee_tracker.spec           # PyInstaller configuration
+├── build_app.sh               # macOS build script
+├── create_dmg.sh              # DMG creation script
+├── README.md                  # This file
+├── CATEGORY_MANAGEMENT.md     # Category management guide
+├── MAPPING_GUIDE.md           # Student mapping guide
+└── STUDENT_MAPPINGS_GUIDE.md  # Student manager documentation
+```
+
+## Documentation
+
+Additional documentation available:
+- **CATEGORY_MANAGEMENT.md** - Detailed category management guide
+- **MAPPING_GUIDE.md** - Student name mapping system guide  
+- **STUDENT_MAPPINGS_GUIDE.md** - Comprehensive student manager documentation
 
 ## License
 
 Free to use and modify for personal and educational purposes.
 
-## Support
+---
 
-For issues or questions, please check:
-1. CSV file format matches Canara Bank statements
-2. PySide6 is properly installed
-3. Python version is 3.7 or higher
+## Recent Updates
+
+### Version 2.0 (November 2025)
+- ✅ Complete Student Manager with CRUD operations
+- ✅ Search and filter functionality for students
+- ✅ CSV/Excel import and export for student lists
+- ✅ Fuzzy name matching with 4 strategies
+- ✅ Auto-save transaction edits
+- ✅ Bulk transaction operations
+- ✅ Enhanced search with multi-field filtering
+- ✅ Collapsible UI panels
+- ✅ Excel file support for bank statements
+- ✅ Auto-create template files on fresh install
+
+### Version 1.0
+- Initial release with basic categorization
+- CSV file parsing
+- Category management
+- Transaction editing
+- Export functionality
 
 ---
 
-**Created for music class fee management** 🎵
+**Created for music class fee management** 🎵  
+**Maintained with ❤️ by the development team**
