@@ -14,6 +14,8 @@ A Python GUI application built with PySide6 to automate fee calculation and cate
 - Duplicate detection for category names and fee amounts
 - Real-time validation and error handling
 
+https://github.com/user-attachments/assets/d0c7ce5c-83a5-4c43-9023-4ae2d9c1dcc2
+
 👥 **Student Name Management**
 - Complete CRUD operations for student mappings
 - **Add Students**: One-by-one through dialog or bulk import via CSV/Excel
@@ -26,6 +28,8 @@ A Python GUI application built with PySide6 to automate fee calculation and cate
 - Auto-creates template file on fresh install with examples
 - Sample CSV template included for easy bulk imports
 
+https://github.com/user-attachments/assets/07e58592-7788-45e0-8072-1c1ced51641e
+
 ✏️ **Transaction Management**
 - **Edit Transactions**: Modify date, name, amount, and category for any transaction
 - **Delete Transactions**: Remove unwanted transactions with confirmation
@@ -33,6 +37,8 @@ A Python GUI application built with PySide6 to automate fee calculation and cate
 - **Bulk Operations**: Select multiple transactions for batch editing or deletion
 - **Auto-save**: Changes automatically saved to JSON file for persistence
 - **Re-process**: Automatically recategorize all transactions after student list updates
+
+https://github.com/user-attachments/assets/a17c0d06-92d5-4f61-85ed-c470ba552dd9
 
 📊 **Advanced Search & Display**
 - **Collapsible Search Panel**: Toggle on/off to save screen space
@@ -43,6 +49,8 @@ A Python GUI application built with PySide6 to automate fee calculation and cate
 - **Checkbox Selection**: Select individual transactions for bulk operations
 - **Sortable Columns**: Click headers to sort by any column
 
+https://github.com/user-attachments/assets/1d9f707c-f265-42ed-be52-57a8e260434e
+
 💾 **Import/Export Capabilities**
 - **CSV Import**: Upload bank statements from CSV files
 - **Excel Import**: Support for .xls and .xlsx bank statements
@@ -50,6 +58,8 @@ A Python GUI application built with PySide6 to automate fee calculation and cate
 - **Student Export**: Export student list to Excel with formatting
 - **Summary Export**: Detailed reports organized by category
 - **Auto-save State**: Transaction edits automatically saved and restored
+
+https://github.com/user-attachments/assets/9d239e99-fd36-4c00-98ba-b1b7f490f168
 
 🎨 **User Interface**
 - **Modern Design**: Clean, professional interface with Qt6 styling
